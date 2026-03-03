@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum MatchStatus {
+  QUEUED
+  IN_PROGRESS
+  FINISHED
+}
+
+enum HeroRole {
+  TANK
+  ASSASSIN
+  MAGE
+  SUPPORT
+  MARKSMAN
+}
+
+model Player {
+  id           String        @id @default(uuid())
+  username     String        @unique
+  email        String        @unique
+  passwordHash String        @map("password_hash")
+  mmr          Int           @default(1000)
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  matches      MatchPlayer[]
+
+  @@map("players")
+}
+
+model Match {
+  id          String        @id @default(uuid())
+  status      MatchStatus   @default(QUEUED)
+  winnerTeam  Int?          @map("winner_team")
+  startedAt   DateTime      @default(now()) @map("started_at")
+  endedAt     DateTime?     @map("ended_at")
+  durationSec Int?          @map("duration_sec")
+  players     MatchPlayer[]
+
+  @@map("matches")
+}
+
+model MatchPlayer {
+  id          String @id @default(uuid())
+  matchId     String @map("match_id")
+  playerId    String @map("player_id")
+  team        Int
+  heroId      String @map("hero_id")
+  kills       Int    @default(0)
+  deaths      Int    @default(0)
+  assists     Int    @default(0)
+  goldEarned  Int    @default(0) @map("gold_earned")
+  damageDelt  Int    @default(0) @map("damage_dealt")
+
+  match  Match  @relation(fields: [matchId], references: [id])
+  player Player @relation(fields: [playerId], references: [id])
+  hero   Hero   @relation(fields: [heroId], references: [id])
+
+  @@map("match_players")
+}
+
+model Hero {
+  id         String        @id
+  name       String
+  role       HeroRole
+  baseHp     Int           @map("base_hp")
+  baseMana   Int           @map("base_mana")
+  baseAttack Int           @map("base_attack")
+  baseArmor  Int           @map("base_armor")
+  baseSpeed  Float         @map("base_speed")
+  matches    MatchPlayer[]
+
+  @@map("heroes")
+}
