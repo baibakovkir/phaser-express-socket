@@ -1,10 +1,11 @@
-import { Request } from "express";
+import { Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import { JWT_SECRET } from "../routes/auth.routes.js";
 
 export interface AuthPayload {
   playerId: string;
   username: string;
+  mmr?: number;
 }
 
 export function authenticateToken(req: Request, res: Response, next: () => void) {
@@ -19,7 +20,7 @@ export function authenticateToken(req: Request, res: Response, next: () => void)
     const decoded = jwt.verify(token, JWT_SECRET) as AuthPayload;
     req.auth = { playerId: decoded.playerId };
     next();
-  } catch (error) {
+  } catch {
     return res.status(403).json({ error: "Invalid or expired token" });
   }
 }

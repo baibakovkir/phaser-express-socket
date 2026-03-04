@@ -7,6 +7,7 @@ export class GameScene extends Phaser.Scene {
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: Record<string, Phaser.Input.Keyboard.Key>;
   private matchId!: string;
+  private isTestMode: boolean = false;
   private moveSpeed = 200;
   private lastInputTick = 0;
   private readonly INPUT_TICK_RATE = 1000 / 60; // 60 inputs per second
@@ -14,13 +15,15 @@ export class GameScene extends Phaser.Scene {
   private uiContainer!: Phaser.GameObjects.Container;
   private tickText!: Phaser.GameObjects.Text;
   private pingText!: Phaser.GameObjects.Text;
+  private modeText!: Phaser.GameObjects.Text;
 
   constructor() {
     super({ key: "GameScene" });
   }
 
-  init(data: { matchId?: string }) {
+  init(data: { matchId?: string; isTestMode?: boolean }) {
     this.matchId = data.matchId || "local";
+    this.isTestMode = data.isTestMode ?? false;
     stateSync.reset();
   }
 
@@ -32,12 +35,18 @@ export class GameScene extends Phaser.Scene {
     this.createHero();
     this.setupInput();
     this.setupCamera();
-    this.setupNetworkListeners();
+    
+    if (!this.isTestMode) {
+      this.setupNetworkListeners();
+    }
 
     // Initialize state sync with local player
     const player = network.getPlayer();
     if (player) {
       stateSync.initLocalPlayer(player.id, 1, "hero1");
+    } else if (this.isTestMode) {
+      // Test mode: create a dummy local player
+      stateSync.initLocalPlayer("test-player", 1, "hero1");
     }
 
     // Start game loop
@@ -64,15 +73,35 @@ export class GameScene extends Phaser.Scene {
     this.uiContainer.setDepth(1000);
     this.uiContainer.setScrollFactor(0);
 
+    // Test mode indicator
+    if (this.isTestMode) {
+      this.modeText = this.add
+        .text(10, 10, "TEST MODE - Press ESC to exit", {
+          fontSize: "14px",
+          color: "#ff88ff",
+          fontFamily: "monospace",
+          backgroundColor: "#441144",
+          padding: { x: 10, y: 5 },
+        })
+        .setOrigin(0, 0);
+      this.uiContainer.add(this.modeText);
+      
+      // Setup ESC key to exit test mode
+      this.input.keyboard?.on('keydown-ESC', () => {
+        this.scene.stop('GameScene');
+        this.scene.start('MenuScene');
+      });
+    }
+
     // Match ID
     this.add
-      .text(10, 10, `Match: ${this.matchId}`, {
+      .text(this.isTestMode ? 10 : 10, this.isTestMode ? 35 : 10, `Match: ${this.matchId}`, {
         fontSize: "12px",
-        color: "#555",
+        color: "#888",
         fontFamily: "monospace",
       })
       .setOrigin(0, 0);
-    this.uiContainer.add(this.add.text(10, 10, `Match: ${this.matchId}`, {
+    this.uiContainer.add(this.add.text(this.isTestMode ? 10 : 10, this.isTestMode ? 35 : 10, `Match: ${this.matchId}`, {
       fontSize: "12px",
       color: "#888",
       fontFamily: "monospace",
@@ -80,7 +109,7 @@ export class GameScene extends Phaser.Scene {
 
     // Tick counter
     this.tickText = this.add
-      .text(10, 30, "Tick: 0", {
+      .text(10, this.isTestMode ? 55 : 30, "Tick: 0", {
         fontSize: "12px",
         color: "#00ff88",
         fontFamily: "monospace",
@@ -88,15 +117,17 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0, 0);
     this.uiContainer.add(this.tickText);
 
-    // Ping
-    this.pingText = this.add
-      .text(10, 50, "Ping: -- ms", {
-        fontSize: "12px",
-        color: "#00ff88",
-        fontFamily: "monospace",
-      })
-      .setOrigin(0, 0);
-    this.uiContainer.add(this.pingText);
+    // Ping (only in online mode)
+    if (!this.isTestMode) {
+      this.pingText = this.add
+        .text(10, 50, "Ping: -- ms", {
+          fontSize: "12px",
+          color: "#00ff88",
+          fontFamily: "monospace",
+        })
+        .setOrigin(0, 0);
+      this.uiContainer.add(this.pingText);
+    }
 
     // Controls hint
     this.add
@@ -195,11 +226,16 @@ export class GameScene extends Phaser.Scene {
 
   private gameLoop() {
     stateSync.incrementTick();
-    this.tickText.setText(`Tick: ${stateSync.getTick()} (Server: ${stateSync.getServerTick()})`);
-
-    // Update ping periodically
-    if (stateSync.getTick() % 60 === 0) {
-      this.updatePing();
+    
+    if (this.isTestMode) {
+      this.tickText.setText(`Tick: ${stateSync.getTick()}`);
+    } else {
+      this.tickText.setText(`Tick: ${stateSync.getTick()} (Server: ${stateSync.getServerTick()})`);
+      
+      // Update ping periodically
+      if (stateSync.getTick() % 60 === 0) {
+        this.updatePing();
+      }
     }
   }
 
@@ -245,7 +281,11 @@ export class GameScene extends Phaser.Scene {
     };
 
     stateSync.queueInput(input);
-    network.sendInput(this.matchId, input, stateSync.getTick());
+    
+    // Only send to network if not in test mode
+    if (!this.isTestMode) {
+      network.sendInput(this.matchId, input, stateSync.getTick());
+    }
   }
 
   private updatePing() {

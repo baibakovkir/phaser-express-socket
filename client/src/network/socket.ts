@@ -2,6 +2,27 @@ import { io, Socket } from "socket.io-client";
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
 
+// Get token from URL params (passed by web app) or localStorage
+function getStoredToken(): string | null {
+  try {
+    // First, check URL parameters (passed from web app)
+    const urlParams = new URLSearchParams(window.location.search);
+    const tokenFromUrl = urlParams.get('token');
+    if (tokenFromUrl) {
+      // Store in localStorage for future use
+      localStorage.setItem('auth_token', tokenFromUrl);
+      // Clean up URL (remove token parameter)
+      window.history.replaceState({}, document.title, window.location.pathname);
+      return tokenFromUrl;
+    }
+    
+    // Fall back to localStorage
+    return localStorage.getItem('auth_token');
+  } catch {
+    return null;
+  }
+}
+
 export interface Player {
   id: string;
   username: string;
@@ -35,105 +56,65 @@ class NetworkManager {
   private socket: Socket;
   private token: string | null = null;
   private player: Player | null = null;
+  private authPromise: Promise<boolean> | null = null;
 
   constructor() {
     this.socket = io(SERVER_URL, { autoConnect: false });
   }
 
-  connect() {
-    this.socket.connect();
+  async connect(): Promise<boolean> {
+    // Try to get token from URL params or localStorage (set by React web app)
+    const storedToken = getStoredToken();
+    if (storedToken) {
+      this.token = storedToken;
+    }
 
-    this.socket.on("connect", () => {
-      console.log("[network] connected:", this.socket.id);
-      // Re-authenticate if we have a token
-      if (this.token) {
-        this.authenticateSocket(this.token);
-      }
+    // If no token, we can't authenticate
+    if (!this.token) {
+      console.log("[network] no token found, not authenticated");
+      return false;
+    }
+
+    // Return existing promise if already connecting
+    if (this.authPromise) {
+      return this.authPromise;
+    }
+
+    this.authPromise = new Promise<boolean>((resolve) => {
+      this.socket.connect();
+
+      this.socket.on("connect", () => {
+        console.log("[network] connected:", this.socket.id);
+        // Authenticate if we have a token
+        if (this.token) {
+          this.authenticateSocket(this.token, resolve);
+        } else {
+          resolve(false);
+        }
+      });
+
+      this.socket.on("connect_error", (error) => {
+        console.error("[network] connection error:", error);
+        resolve(false);
+      });
     });
 
-    this.socket.on("disconnect", () => {
-      console.log("[network] disconnected");
-    });
+    return this.authPromise;
   }
 
-  private authenticateSocket(token: string) {
+  private authenticateSocket(token: string, callback?: (success: boolean) => void) {
     this.socket.emit("auth", { token }, (response: { success: boolean; error?: string; player?: Player }) => {
       if (response.success && response.player) {
         this.player = response.player;
         console.log("[network] socket authenticated as", response.player.username);
+        callback?.(true);
       } else {
         console.warn("[network] socket auth failed:", response.error);
         this.token = null;
         this.player = null;
+        callback?.(false);
       }
     });
-  }
-
-  // Authentication
-  async register(username: string, email: string, password: string): Promise<{ success: boolean; token?: string; player?: Player; error?: string }> {
-    try {
-      const response = await fetch(`${SERVER_URL}/auth/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, email, password }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        return { success: false, error: data.error };
-      }
-
-      this.token = data.token;
-      this.player = data.player;
-      this.authenticateSocket(data.token);
-      return { success: true, token: data.token, player: data.player };
-    } catch (error) {
-      return { success: false, error: "Network error" };
-    }
-  }
-
-  async login(email: string, password: string): Promise<{ success: boolean; token?: string; player?: Player; error?: string }> {
-    try {
-      const response = await fetch(`${SERVER_URL}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        return { success: false, error: data.error };
-      }
-
-      this.token = data.token;
-      this.player = data.player;
-      this.authenticateSocket(data.token);
-      return { success: true, token: data.token, player: data.player };
-    } catch (error) {
-      return { success: false, error: "Network error" };
-    }
-  }
-
-  async getCurrentPlayer(): Promise<{ success: boolean; player?: Player; error?: string }> {
-    if (!this.token) {
-      return { success: false, error: "Not authenticated" };
-    }
-
-    try {
-      const response = await fetch(`${SERVER_URL}/auth/me`, {
-        headers: { "Authorization": `Bearer ${this.token}` },
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        return { success: false, error: data.error };
-      }
-
-      this.player = data.player;
-      return { success: true, player: data.player };
-    } catch (error) {
-      return { success: false, error: "Network error" };
-    }
   }
 
   // Lobby methods

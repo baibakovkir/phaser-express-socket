@@ -45,7 +45,7 @@ export function initSocket(httpServer: HttpServer) {
         }
 
         socket.auth = { playerId: player.id, username: player.username };
-        callback({ success: true, player });
+        callback({ success: true, player: { playerId: player.id, username: player.username, mmr: player.mmr } });
       } catch (error) {
         console.error("[socket] auth error:", error);
         callback({ success: false, error: "Authentication failed" });

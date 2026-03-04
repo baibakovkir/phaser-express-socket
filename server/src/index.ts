@@ -11,7 +11,13 @@ const PORT = parseInt(process.env.PORT || "3000", 10);
 const app = express();
 const httpServer = createServer(app);
 
-app.use(cors({ origin: process.env.CLIENT_ORIGIN || "http://localhost:5173" }));
+app.use(cors({
+  origin: [
+    process.env.CLIENT_ORIGIN || "http://localhost:5173",
+    process.env.WEB_ORIGIN || "http://localhost:5174",
+  ],
+  credentials: true,
+}));
 app.use(express.json());
 
 app.get("/health", (_req, res) => {
