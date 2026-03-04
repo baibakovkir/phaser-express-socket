@@ -5,6 +5,7 @@ export interface MatchmakingJobData {
   playerId: string;
   socketId: string;
   mmr: number;
+  username: string;
   joinedAt: number;
 }
 

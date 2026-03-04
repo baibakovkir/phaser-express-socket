@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
 import cors from "cors";
+import { authRoutes } from "./routes/auth.routes.js";
 import { initSocket } from "./socket.js";
 import { initMatchmakingWorker } from "./queue/matchmaking.worker.js";
 
@@ -16,6 +17,8 @@ app.use(express.json());
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", timestamp: Date.now() });
 });
+
+app.use("/auth", authRoutes);
 
 initSocket(httpServer);
 initMatchmakingWorker();

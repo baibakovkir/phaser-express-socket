@@ -42,13 +42,13 @@ A real-time 3v3 MOBA (Multiplayer Online Battle Arena) built with:
 - [x] Bull queue for matchmaking
 - [x] Database schema (Prisma ORM)
 
-### Phase 2 — Core Networking
-- [ ] Player authentication (JWT / session-based)
-- [ ] Lobby system: create/join/leave
-- [ ] Matchmaking queue (3v3): Bull job processes queue, forms teams
-- [ ] Socket.io rooms per match
-- [ ] Client-server state synchronization (tick-based)
-- [ ] Latency compensation / interpolation
+### Phase 2 — Core Networking ✅
+- [x] Player authentication (JWT / session-based)
+- [x] Lobby system: create/join/leave
+- [x] Matchmaking queue (3v3): Bull job processes queue, forms teams
+- [x] Socket.io rooms per match
+- [x] Client-server state synchronization (tick-based)
+- [x] Latency compensation / interpolation
 
 ### Phase 3 — Core Gameplay
 - [ ] Top-down map with lanes, jungle, bases
@@ -206,6 +206,117 @@ npm install
 # Run database migrations
 npm run db:migrate
 
+# Seed heroes (optional)
+npm run db:seed
+
 # Start development (server + client)
 npm run dev
+```
+
+---
+
+## Phase 2 — API & Socket Events
+
+### REST API Endpoints
+
+#### Authentication
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/auth/register` | Register new player |
+| POST | `/auth/login` | Login with email/password |
+| GET | `/auth/me` | Get current player (requires Bearer token) |
+
+**Register Request:**
+```json
+{
+  "username": "player1",
+  "email": "player1@example.com",
+  "password": "securepass123"
+}
+```
+
+**Login Request:**
+```json
+{
+  "email": "player1@example.com",
+  "password": "securepass123"
+}
+```
+
+**Response (both):**
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "player": {
+    "id": "uuid",
+    "username": "player1",
+    "email": "player1@example.com",
+    "mmr": 1000
+  }
+}
+```
+
+### Socket.io Events
+
+#### Client → Server
+| Event | Payload | Description |
+|-------|---------|-------------|
+| `auth` | `{ token: string }` | Authenticate socket connection |
+| `lobby:create` | `{ name, isPrivate, password? }` | Create a new lobby |
+| `lobby:join` | `{ lobbyId, password? }` | Join an existing lobby |
+| `lobby:leave` | - | Leave current lobby |
+| `lobby:ready` | `{ ready: boolean }` | Set ready status |
+| `lobby:kick` | `{ targetId: string }` | Kick player (host only) |
+| `lobby:list` | - | Get public lobbies list |
+| `queue:join` | `{ playerId: string }` | Join matchmaking queue |
+| `queue:leave` | - | Leave matchmaking queue |
+| `game:input` | `{ matchId, input, tick }` | Send game input |
+
+#### Server → Client
+| Event | Payload | Description |
+|-------|---------|-------------|
+| `lobby:updated` | `{ lobby: Lobby }` | Lobby state changed |
+| `lobby:kicked` | - | You were kicked from lobby |
+| `queue:joined` | - | Successfully joined queue |
+| `queue:left` | - | Left matchmaking queue |
+| `match:found` | `{ matchId, team1, team2 }` | Match found! |
+| `game:input` | `{ playerId, input, tick }` | Other player's input |
+
+---
+
+## Project Structure
+
+```
+phaser-express-socket/
+├── client/
+│   ├── src/
+│   │   ├── network/
+│   │   │   ├── socket.ts        # Network manager with auth
+│   │   │   └── state-sync.ts    # Tick-based state sync
+│   │   ├── scenes/
+│   │   │   ├── BootScene.ts     # Assets loading
+│   │   │   ├── MenuScene.ts     # Auth + Lobby UI
+│   │   │   └── GameScene.ts     # Main gameplay
+│   │   └── main.ts
+│   └── package.json
+├── server/
+│   ├── src/
+│   │   ├── lib/
+│   │   │   ├── prisma.ts        # Database client
+│   │   │   ├── redis.ts         # Redis client
+│   │   │   └── lobby.ts         # Lobby manager
+│   │   ├── middleware/
+│   │   │   └── auth.middleware.ts
+│   │   ├── queue/
+│   │   │   ├── matchmaking.queue.ts
+│   │   │   └── matchmaking.worker.ts
+│   │   ├── routes/
+│   │   │   └── auth.routes.ts   # REST auth endpoints
+│   │   ├── index.ts             # Server entry
+│   │   └── socket.ts            # Socket.io handler
+│   ├── prisma/
+│   │   ├── schema.prisma
+│   │   └── seed.ts              # Hero seed data
+│   └── package.json
+└── package.json
 ```
