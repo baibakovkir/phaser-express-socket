@@ -3,6 +3,7 @@ import express from "express";
 import { createServer } from "http";
 import cors from "cors";
 import { authRoutes } from "./routes/auth.routes.js";
+import { heroesRoutes } from "./routes/heroes.routes.js";
 import { initSocket } from "./socket.js";
 import { initMatchmakingWorker } from "./queue/matchmaking.worker.js";
 
@@ -25,6 +26,7 @@ app.get("/health", (_req, res) => {
 });
 
 app.use("/auth", authRoutes);
+app.use("/heroes", heroesRoutes);
 
 initSocket(httpServer);
 initMatchmakingWorker();

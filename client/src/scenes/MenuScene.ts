@@ -207,7 +207,7 @@ export class MenuScene extends Phaser.Scene {
   private startTestMode() {
     this.statusText.setText("Starting test mode...");
     this.time.delayedCall(500, () => {
-      this.scene.start("GameScene", { matchId: "test-mode", isTestMode: true });
+      this.scene.start("ChampionSelectScene", { isTestMode: true });
     });
   }
 

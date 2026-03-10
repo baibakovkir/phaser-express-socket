@@ -1,0 +1,172 @@
+.champions-section {
+  padding: 100px 20px;
+  background: var(--dark-surface);
+}
+
+.loading-heroes {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 60px 0;
+}
+
+.loading-heroes p {
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+}
+
+.champions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 30px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.champion-card {
+  background: var(--dark-card);
+  border-radius: 12px;
+  padding: 30px 25px;
+  text-align: center;
+  transition: all 0.3s ease;
+  border: 2px solid transparent;
+  position: relative;
+  overflow: hidden;
+}
+
+.champion-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--role-color, #00ff88);
+}
+
+.champion-card:hover {
+  transform: translateY(-10px);
+  border-color: var(--role-color, #00ff88);
+  box-shadow: 0 10px 40px rgba(0, 255, 136, 0.2);
+}
+
+.champion-avatar {
+  width: 100px;
+  height: 100px;
+  margin: 0 auto 20px;
+}
+
+.avatar-shape {
+  width: 100%;
+  height: 100%;
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+}
+
+.champion-header {
+  margin-bottom: 20px;
+}
+
+.role-icon {
+  font-size: 2rem;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.champion-card h3 {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.4rem;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+}
+
+.champion-role {
+  color: var(--role-color, #00ff88);
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 2px;
+}
+
+.champion-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 15px;
+  padding: 20px 0;
+  border-top: 1px solid var(--dark-surface);
+  border-bottom: 1px solid var(--dark-surface);
+  margin-bottom: 15px;
+}
+
+.stat {
+  text-align: center;
+}
+
+.stat-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-bottom: 5px;
+  text-transform: uppercase;
+}
+
+.stat-value {
+  display: block;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.champion-details {
+  display: flex;
+  justify-content: center;
+  gap: 30px;
+}
+
+.detail {
+  text-align: center;
+}
+
+.detail-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-bottom: 5px;
+}
+
+.detail-value {
+  display: block;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .champions-grid {
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
+  }
+  
+  .champion-card {
+    padding: 25px 20px;
+  }
+  
+  .champion-avatar {
+    width: 80px;
+    height: 80px;
+  }
+  
+  .champion-card h3 {
+    font-size: 1.2rem;
+  }
+  
+  .champion-stats {
+    gap: 10px;
+  }
+  
+  .stat-value {
+    font-size: 1.1rem;
+  }
+}

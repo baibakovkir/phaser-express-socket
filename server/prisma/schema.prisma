@@ -19,6 +19,7 @@ enum HeroRole {
   MAGE
   SUPPORT
   MARKSMAN
+  FIGHTER
 }
 
 model Player {
@@ -74,7 +75,25 @@ model Hero {
   baseAttack Int           @map("base_attack")
   baseArmor  Int           @map("base_armor")
   baseSpeed  Float         @map("base_speed")
+  hpRegen    Float         @default(3) @map("hp_regen") // HP regenerated per second
+  manaRegen  Float         @default(2) @map("mana_regen") // Mana regenerated per second
   matches    MatchPlayer[]
+  abilities  Ability[]
 
   @@map("heroes")
+}
+
+model Ability {
+  id          String @id @default(uuid())
+  heroId      String @map("hero_id")
+  key         String // 1, 2, 3, 4
+  name        String
+  description String
+  cooldown    Int    @default(10000) // ms
+  manaCost    Int    @default(50)
+  damage      Int    @default(0)
+  range       Int    @default(200)
+  hero        Hero   @relation(fields: [heroId], references: [id])
+
+  @@map("abilities")
 }

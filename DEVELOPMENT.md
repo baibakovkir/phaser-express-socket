@@ -12,6 +12,24 @@ A real-time 3v3 MOBA (Multiplayer Online Battle Arena) built with:
 
 ---
 
+## ⚠️ Critical Files - DO NOT DELETE
+
+### `/server/.env` - Server Environment File
+**This file MUST exist for the server to run!**
+
+If you see error `Environment variable not found: DATABASE_URL`, the file is missing.
+
+**To restore:**
+```bash
+cp server/.env.example server/.env
+```
+
+**Location:** `/home/kirill/dev/personal/phaser-express-socket/server/.env`
+
+See [`ENV_FILES_WARNING.md`](./ENV_FILES_WARNING.md) for details.
+
+---
+
 ## Architecture
 
 ```
@@ -50,15 +68,47 @@ A real-time 3v3 MOBA (Multiplayer Online Battle Arena) built with:
 - [x] Client-server state synchronization (tick-based)
 - [x] Latency compensation / interpolation
 
-### Phase 3 — Core Gameplay
-- [ ] Top-down map with lanes, jungle, bases
-- [ ] Champion/hero selection screen
-- [ ] Movement (click-to-move / WASD)
-- [ ] Basic attack system (auto-attack, abilities)
-- [ ] Health, mana, death/respawn
-- [ ] Minion/creep waves (AI-controlled)
-- [ ] Towers / turrets
-- [ ] Fog of war
+### Phase 3 — Core Gameplay ✅
+- [x] Top-down map with lanes, jungle, bases
+- [x] Champion/hero selection screen
+- [x] Movement (click-to-move / WASD)
+- [x] Basic attack system (auto-attack, abilities)
+- [x] Health, mana, death/respawn
+- [x] Minion/creep waves (AI-controlled)
+- [x] Towers / turrets
+- [ ] Fog of war (The server must not send data to the client) — Partial
+- [ ] Minimap (REMOVED - per PHASE3_ISSUES_AND_SOLUTIONS.md)
+- [ ] Chat
+- [x] Scoreboard
+- [x] Tick Rate vs Frame Rate (60 TPS / 60 FPS)
+- [x] **Auto-attack system** - Heroes automatically attack all enemies within range
+- [x] **HP bar colors** - Allies have green HP bars, enemies have red HP bars
+- [x] **Nexus collision** - Nexus objects now have physics collision
+- [x] **Instant damage** - Damage applied immediately (hitscan), projectiles are visual only
+- [x] **Minion combat** - Minions have HP bars, collision, and attack enemies (minions, heroes, towers, nexus)
+- [x] **Nexus HP bar** - Nexus displays HP bar showing current health
+- [x] **Champion grid layout** - Fixed grid spacing to prevent card overlap
+- [x] **Ability debug logging** - Console logging for ability usage debugging
+
+**Testing**: See [`PHASE3_TESTING.md`](./PHASE3_TESTING.md) for local testing instructions.
+
+**Recent Changes** (March 10, 2026):
+- **Reworked attack mechanic**: Heroes now automatically attack ALL enemies within range without needing to press spacebar
+- **Fixed HP bar colors**: Allied heroes/towers/minions now display green HP bars, enemies display red HP bars
+- **Added nexus collision**: Nexus objects now have physics bodies and units collide with them
+- **Added nexus HP bar**: Nexus now displays a health bar above it
+- **Instant damage processing**: Damage is now applied immediately (hitscan), projectiles are visual-only for feedback
+- **Bot HP bar updates**: Bot health bars now update immediately when taking damage
+- **Minion combat system**: Minions now have HP bars, physics collision, and full combat logic (attack enemy minions, heroes, towers, and nexus)
+- **Removed minimap**: Minimap removed per PHASE3_ISSUES_AND_SOLUTIONS.md to simplify code and improve performance
+- **Fixed champion grid layout**: Increased spacing between champion cards to prevent overlap
+- **Added ability debug logging**: Console now logs detailed ability usage information for debugging
+- **Nerfed minion stats**: Reduced minion HP, attack damage, and movement speed for better game balance
+- **Heroes attack minions**: Hero auto-attack now targets enemy minions in addition to bots, towers, and nexus
+- **Improved minion engagement**: Minions now aggressively engage nearest enemy minions and stop to fight
+- **Dynamic minion collision**: Enemy minions push each other apart to prevent passing through
+- **Nexus healing**: Nexus now heals allied heroes, bots, and minions within 300px range (+50 HP/sec)
+- **Towers attack minions**: Towers now target and attack ALL enemy units in range including minions
 
 ### Phase 4 — Heroes & Abilities
 - [ ] Design 6+ heroes with unique kits (Q, W, E, R)
