@@ -1,0 +1,1 @@
+export { usePhaserEvent } from './usePhaserEvent';

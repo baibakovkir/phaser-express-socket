@@ -110,13 +110,16 @@ See [`ENV_FILES_WARNING.md`](./ENV_FILES_WARNING.md) for details.
 - **Nexus healing**: Nexus now heals allied heroes, bots, and minions within 300px range (+50 HP/sec)
 - **Towers attack minions**: Towers now target and attack ALL enemy units in range including minions
 
+What to fix
+hp bar is not updating for other bot heroes. Heroes should respawn when they die after a certain amount of time.
+invalid attack strategy for heroes and creeps. creeps run past each other, they should fight on lane. And there should be only middle lane, now I see two lanes for each side. Let's make bots more intelligent. They should avoid hits, farm creeps and etc.
+
 ### Phase 4 — Heroes & Abilities
-- [ ] Design 6+ heroes with unique kits (Q, W, E, R)
+- [ ] Design 6+ heroes with unique kits
 - [ ] Cooldown system
 - [ ] Skill shots, AoE, targeted abilities
 - [ ] Status effects (stun, slow, silence, etc.)
 - [ ] Leveling & skill points
-
 ### Phase 5 — Items & Economy
 - [ ] Gold from minion kills, hero kills, objectives
 - [ ] Item shop (in-base)
@@ -124,7 +127,7 @@ See [`ENV_FILES_WARNING.md`](./ENV_FILES_WARNING.md) for details.
 - [ ] Item build paths / recipes
 
 ### Phase 6 — Map & Objectives
-- [ ] 3-lane map design (simplified for 3v3)
+- [ ] 1-lane map design (simplified for 3v3)
 - [ ] Jungle camps with buffs
 - [ ] Central objective (boss / dragon equivalent)
 - [ ] Victory condition: destroy enemy nexus/core

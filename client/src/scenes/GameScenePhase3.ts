@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { network } from "../network/socket.js";
-import { stateSync, InputCommand, PlayerState } from "../network/state-sync.js";
+import { stateSync, InputCommand, PlayerState } from "../network/stateSync.js";
 
 // Champion definitions (matching database format)
 export interface Champion {
@@ -284,6 +284,8 @@ interface BotData {
   lastAttackTime: number;
   behaviorTick: number;
   hp?: number;
+  isDead?: boolean;
+  respawnTime?: number;
 }
 
 export class GameScenePhase3 extends Phaser.Scene {
@@ -350,6 +352,9 @@ export class GameScenePhase3 extends Phaser.Scene {
   private playerAssists = 0;
   private currentHP = 500;
   private currentMana = 200;
+
+  // Nexus healing
+  private nexusHealingEnabled = false;
 
   // Minion spawning
   private minionSpawnTimer!: Phaser.Time.TimerEvent;
@@ -433,6 +438,12 @@ export class GameScenePhase3 extends Phaser.Scene {
 
     // Spawn first minion wave after delay
     this.time.delayedCall(5000, () => this.spawnMinionWave());
+
+    // Enable nexus healing after 3 seconds (prevent instant heal on spawn)
+    this.time.delayedCall(3000, () => {
+      this.nexusHealingEnabled = true;
+      console.log("[Nexus] Healing enabled");
+    });
   }
 
   private setupCollisions() {
@@ -457,21 +468,54 @@ export class GameScenePhase3 extends Phaser.Scene {
       });
     });
 
-    // Minions collide with each other (same team only to prevent stacking)
+    // Minions collide with ALL other minions (enemy AND allied - to prevent stacking)
     this.minions.forEach((minion1, i) => {
       const mData1 = (minion1 as any).minionData;
-      if (!mData1) return;
-      
+      if (!mData1 || mData1.hp <= 0) return;
+
       for (let j = i + 1; j < this.minions.length; j++) {
         const minion2 = this.minions[j];
         const mData2 = (minion2 as any).minionData;
-        if (!mData2 || mData1.team === mData2.team) continue;
-        
+        if (!mData2 || mData2.hp <= 0) continue;
+
+        // ALL minions collide (prevents stacking and creates fighting lines)
         this.physics.add.collider(minion1, minion2);
       }
     });
 
-    console.log("[Physics] Collision setup complete (including nexus and minions)");
+    // Minions collide with enemy nexuses (can't walk through)
+    this.nexuses.forEach((nexus) => {
+      this.minions.forEach((minion) => {
+        const mData = (minion as any).minionData;
+        if (!mData || mData.hp <= 0) return;
+        
+        const nexusData = (nexus as any).nexusData;
+        if (!nexusData || nexusData.hp <= 0) return;
+        
+        // Only collide with enemy nexus
+        if (mData.team !== nexusData.team) {
+          this.physics.add.collider(minion, nexus);
+        }
+      });
+    });
+
+    // Minions collide with enemy towers (can't walk through)
+    this.towers.forEach((tower) => {
+      this.minions.forEach((minion) => {
+        const mData = (minion as any).minionData;
+        if (!mData || mData.hp <= 0) return;
+        
+        const towerData = (tower as any).towerData;
+        if (!towerData || towerData.hp <= 0) return;
+        
+        // Only collide with enemy tower
+        if (mData.team !== towerData.team) {
+          this.physics.add.collider(minion, tower);
+        }
+      });
+    });
+
+    console.log("[Physics] Collision setup complete (minions, towers, nexuses)");
   }
 
   update(time: number) {
@@ -484,9 +528,12 @@ export class GameScenePhase3 extends Phaser.Scene {
     // Handle player movement
     this.handleMovement();
 
-    // Update bot AI
+    // Update bot AI and respawn (always run for test mode, respawn check for all modes)
     if (this.isTestMode) {
       this.updateBots(time);
+    } else {
+      // Still check for bot respawn in non-test mode
+      this.updateBotRespawns(time);
     }
 
     // Update minions
@@ -538,21 +585,20 @@ export class GameScenePhase3 extends Phaser.Scene {
       this.mapGraphics.lineBetween(0, y, this.MAP_SIZE, y);
     }
 
-    // Three lanes
-    this.createLane("top", 300, 300, this.MAP_SIZE - 600, 300, this.MAP_SIZE - 600, this.MAP_SIZE / 2);
-    this.createLane("mid", 300, this.MAP_SIZE / 2, this.MAP_SIZE - 600, this.MAP_SIZE / 2);
-    this.createLane("bot", 300, this.MAP_SIZE - 300, this.MAP_SIZE / 2, this.MAP_SIZE - 300, this.MAP_SIZE - 300, this.MAP_SIZE - 600);
+    // Single middle lane - DIAGONAL from nexus to nexus
+    // Blue nexus: (250, MAP_SIZE - 250), Red nexus: (MAP_SIZE - 250, 250)
+    this.createLane("mid", 250, this.MAP_SIZE - 250, this.MAP_SIZE - 250, 250);
 
-    // Jungle areas
+    // Jungle areas (expanded for single lane)
     this.mapGraphics.fillStyle(0x1a1a33, 0.5);
-    // Top jungle
-    this.mapGraphics.fillCircle(800, 600, 200);
-    this.mapGraphics.fillCircle(1200, 600, 200);
-    // Bot jungle
-    this.mapGraphics.fillCircle(800, this.MAP_SIZE - 600, 200);
-    this.mapGraphics.fillCircle(1200, this.MAP_SIZE - 600, 200);
+    // Top-left jungle
+    this.mapGraphics.fillCircle(600, 800, 200);
+    this.mapGraphics.fillCircle(800, 1200, 200);
+    // Bottom-right jungle
+    this.mapGraphics.fillCircle(this.MAP_SIZE - 600, this.MAP_SIZE - 800, 200);
+    this.mapGraphics.fillCircle(this.MAP_SIZE - 800, this.MAP_SIZE - 1200, 200);
 
-    // River (diagonal)
+    // River (diagonal - perpendicular to lane)
     this.mapGraphics.lineStyle(20, 0x3344aa, 0.3);
     this.mapGraphics.lineBetween(0, this.MAP_SIZE, this.MAP_SIZE, 0);
 
@@ -580,8 +626,10 @@ export class GameScenePhase3 extends Phaser.Scene {
   }
 
   private createPlayer() {
-    const startX = this.playerTeam === this.BLUE_TEAM ? 400 : this.MAP_SIZE - 400;
-    const startY = this.playerTeam === this.BLUE_TEAM ? this.MAP_SIZE - 400 : 400;
+    // Spawn player at nexus (on diagonal lane)
+    // Blue nexus: (250, MAP_SIZE - 250), Red nexus: (MAP_SIZE - 250, 250)
+    const startX = this.playerTeam === this.BLUE_TEAM ? 250 : this.MAP_SIZE - 250;
+    const startY = this.playerTeam === this.BLUE_TEAM ? this.MAP_SIZE - 250 : 250;
 
     // Create player sprite with collision
     this.playerSprite = this.physics.add.sprite(startX, startY, "hero");
@@ -696,6 +744,13 @@ export class GameScenePhase3 extends Phaser.Scene {
       tower.add([base, top]);
       tower.setDepth(5);
 
+      // Add physics body for collision
+      this.physics.add.existing(tower);
+      const towerBody = tower.body as Phaser.Physics.Arcade.Body;
+      towerBody.setCircle(30);
+      towerBody.setImmovable(true);
+      towerBody.setAllowGravity(false);
+
       // Store tower data
       (tower as any).towerData = {
         id: `tower-${index}`,
@@ -715,8 +770,8 @@ export class GameScenePhase3 extends Phaser.Scene {
 
       this.towers.push(tower);
     });
-    
-    console.log(`[Towers] Created ${this.towers.length} towers`);
+
+    console.log(`[Towers] Created ${this.towers.length} towers with collision`);
   }
 
   private setupInput() {
@@ -976,8 +1031,8 @@ export class GameScenePhase3 extends Phaser.Scene {
 
   private updateBotHealthBar(bot: { sprite: Phaser.Physics.Arcade.Sprite; data: BotData; healthBar: Phaser.GameObjects.Graphics }) {
     const sprite = bot.sprite as any;
-    const maxHP = sprite.botHP || 500;
     const currentHP = sprite.botHP || 500;
+    const maxHP = sprite.botMaxHP || 500;
     const hpPercent = Math.max(0, currentHP / maxHP);
     const botTeam = sprite.team as number;
 
@@ -1194,6 +1249,9 @@ export class GameScenePhase3 extends Phaser.Scene {
   }
 
   private updateNexusHealing(time: number) {
+    // Don't heal until enabled (prevent instant heal on spawn)
+    if (!this.nexusHealingEnabled) return;
+
     const now = Date.now();
     const HEAL_AMOUNT = 50; // HP per second
     const HEAL_INTERVAL = 1000; // Heal every second
@@ -1217,10 +1275,10 @@ export class GameScenePhase3 extends Phaser.Scene {
             if (distToBot <= HEAL_RADIUS) {
               const sprite = bot.sprite as any;
               if (!sprite.botHP) sprite.botHP = 500;
-              const maxHP = sprite.botHP + 100; // Approximate max HP
+              const maxHP = sprite.botMaxHP || 500;
               sprite.botHP = Math.min(sprite.botHP + HEAL_AMOUNT, maxHP);
               this.updateBotHealthBar(bot);
-              
+
               // Show heal effect
               this.showHealEffect(bot.sprite.x, bot.sprite.y, HEAL_AMOUNT);
             }
@@ -1235,7 +1293,7 @@ export class GameScenePhase3 extends Phaser.Scene {
             if (distToMinion <= HEAL_RADIUS && minionData.hp < minionData.maxHp) {
               minionData.hp = Math.min(minionData.hp + HEAL_AMOUNT, minionData.maxHp);
               this.updateMinionHealthBar(minion);
-              
+
               // Show heal effect
               this.showHealEffect(minion.x, minion.y, HEAL_AMOUNT);
             }
@@ -1248,7 +1306,7 @@ export class GameScenePhase3 extends Phaser.Scene {
           if (distToPlayer <= HEAL_RADIUS && this.currentHP < this.playerChampion.maxHp) {
             this.currentHP = Math.min(this.currentHP + HEAL_AMOUNT, this.playerChampion.maxHp);
             this.updateHealthManaUI();
-            
+
             // Show heal effect
             this.showHealEffect(this.playerSprite.x, this.playerSprite.y, HEAL_AMOUNT);
           }
@@ -1768,6 +1826,77 @@ export class GameScenePhase3 extends Phaser.Scene {
             }
           }
         }
+        // Bot projectiles - hit player and allied bots/minions/towers/nexus
+        else if (projData.isBotProjectile) {
+          const shooterTeam = projData.shooterTeam as number;
+          
+          // Check collision with player
+          if (shooterTeam !== this.playerTeam) {
+            const dist = Phaser.Math.Distance.Between(proj.x, proj.y, this.playerSprite.x, this.playerSprite.y);
+            if (dist < 20) {
+              this.currentHP -= projData.damage;
+              this.updateHealthManaUI();
+              this.showDamageNumber(this.playerSprite.x, this.playerSprite.y, projData.damage);
+              
+              if (this.currentHP <= 0) {
+                this.playerDeaths++;
+                this.respawnPlayer();
+              }
+              proj.destroy();
+              return false;
+            }
+          }
+          
+          // Check collision with allied bots (shooter is enemy to player's team)
+          // Skip dead bots - they can't be hit
+          this.bots.forEach((bot, botId) => {
+            const botTeam = (bot.sprite as any).team as number;
+            if (botTeam !== shooterTeam && !bot.data.isDead) {
+              const dist = Phaser.Math.Distance.Between(proj.x, proj.y, bot.sprite.x, bot.sprite.y);
+              if (dist < 20) {
+                this.damageBot(botId, projData.damage);
+                proj.destroy();
+              }
+            }
+          });
+          
+          // Check collision with towers
+          this.towers.forEach((tower) => {
+            const towerData = (tower as any).towerData;
+            if (towerData && towerData.team !== shooterTeam && towerData.hp > 0) {
+              const dist = Phaser.Math.Distance.Between(proj.x, proj.y, tower.x, tower.y);
+              if (dist < 30) {
+                this.damageTower(tower, projData.damage);
+                proj.destroy();
+              }
+            }
+          });
+          
+          // Check collision with nexus
+          this.nexuses.forEach((nexus) => {
+            const nexusData = (nexus as any).nexusData;
+            if (nexusData && nexusData.team !== shooterTeam && nexusData.hp > 0) {
+              const dist = Phaser.Math.Distance.Between(proj.x, proj.y, nexus.x, nexus.y);
+              if (dist < 50) {
+                this.damageNexus(nexus, projData.damage);
+                proj.destroy();
+              }
+            }
+          });
+          
+          // Check collision with minions
+          for (const minion of this.minions) {
+            const minionData = (minion as any).minionData;
+            if (minionData && minionData.team !== shooterTeam && minionData.hp > 0) {
+              const dist = Phaser.Math.Distance.Between(proj.x, proj.y, minion.x, minion.y);
+              if (dist < 15) {
+                this.damageMinion(minionData.id, projData.damage);
+                proj.destroy();
+                return false;
+              }
+            }
+          }
+        }
         // Tower projectiles - hit player and allied bots/minions
         else if (projData.isTowerProjectile) {
           // Check collision with player
@@ -1865,33 +1994,31 @@ export class GameScenePhase3 extends Phaser.Scene {
   }
 
   private spawnMinionsForTeam(team: number) {
-    const spawnPoints = team === this.BLUE_TEAM
-      ? [{ x: 300, y: this.MAP_SIZE - 300 }, { x: 300, y: this.MAP_SIZE / 2 }, { x: 300, y: 300 }]
-      : [{ x: this.MAP_SIZE - 300, y: 300 }, { x: this.MAP_SIZE - 300, y: this.MAP_SIZE / 2 }, { x: this.MAP_SIZE - 300, y: this.MAP_SIZE - 300 }];
+    // Single lane spawn points - RIGHT AT NEXUS (diagonal lane)
+    // Blue nexus: (250, MAP_SIZE - 250), Red nexus: (MAP_SIZE - 250, 250)
+    const spawnPoint = team === this.BLUE_TEAM
+      ? { x: 250, y: this.MAP_SIZE - 250 }  // Blue nexus position
+      : { x: this.MAP_SIZE - 250, y: 250 };  // Red nexus position
 
-    const laneTargets = team === this.BLUE_TEAM
-      ? [{ x: this.MAP_SIZE - 300, y: 300 }, { x: this.MAP_SIZE - 300, y: this.MAP_SIZE / 2 }, { x: this.MAP_SIZE - 300, y: this.MAP_SIZE - 300 }]
-      : [{ x: 300, y: this.MAP_SIZE - 300 }, { x: 300, y: this.MAP_SIZE / 2 }, { x: 300, y: 300 }];
+    const targetPoint = team === this.BLUE_TEAM
+      ? { x: this.MAP_SIZE - 250, y: 250 }  // Enemy nexus (top-right)
+      : { x: 250, y: this.MAP_SIZE - 250 };  // Enemy nexus (bottom-left)
 
-    // Spawn 3 melee, 2 ranged, 1 siege (every 3rd wave) per lane
-    spawnPoints.forEach((spawn, laneIndex) => {
-      const target = laneTargets[laneIndex];
+    // Spawn 3 melee, 2 ranged, 1 siege (every 3rd wave)
+    // Melee minions - spawn closer together at nexus
+    for (let i = 0; i < 3; i++) {
+      this.createMinion(spawnPoint.x + i * 20, spawnPoint.y - i * 20, "melee", team, targetPoint.x, targetPoint.y);
+    }
 
-      // Melee minions
-      for (let i = 0; i < 3; i++) {
-        this.createMinion(spawn.x + i * 30, spawn.y + i * 30, "melee", team, target.x, target.y);
-      }
+    // Ranged minions
+    for (let i = 0; i < 2; i++) {
+      this.createMinion(spawnPoint.x + 60 + i * 20, spawnPoint.y - 60 - i * 20, "ranged", team, targetPoint.x, targetPoint.y);
+    }
 
-      // Ranged minions
-      for (let i = 0; i < 2; i++) {
-        this.createMinion(spawn.x + 100 + i * 30, spawn.y + i * 30, "ranged", team, target.x, target.y);
-      }
-
-      // Siege minion (every 3rd wave)
-      if (this.minionWave % 3 === 0) {
-        this.createMinion(spawn.x + 200, spawn.y, "siege", team, target.x, target.y);
-      }
-    });
+    // Siege minion (every 3rd wave)
+    if (this.minionWave % 3 === 0) {
+      this.createMinion(spawnPoint.x + 120, spawnPoint.y - 120, "siege", team, targetPoint.x, targetPoint.y);
+    }
   }
 
   private createMinion(x: number, y: number, type: "melee" | "ranged" | "siege", team: number, targetX: number, targetY: number) {
@@ -1965,7 +2092,38 @@ export class GameScenePhase3 extends Phaser.Scene {
       const data = (minion as any).minionData;
       if (!data || data.hp <= 0) return false;
 
-      // Find target (enemy minion, hero, tower, nexus)
+      // PRIORITY 1: Check for enemy minions in range - FIGHT FIRST!
+      const nearestEnemyMinion = this.findNearestEnemyMinion(minion, 100);
+      if (nearestEnemyMinion) {
+        const fightDist = Phaser.Math.Distance.Between(minion.x, minion.y, nearestEnemyMinion.x, nearestEnemyMinion.y);
+        if (fightDist <= data.attackRange) {
+          // Attack enemy minion
+          if (now - data.lastAttackTime > 1000) {
+            data.lastAttackTime = now;
+            this.minionAttack(minion, nearestEnemyMinion);
+          }
+          // Stop moving when attacking
+          minion.x = minion.x;
+          minion.y = minion.y;
+        } else {
+          // Move toward enemy minion to fight
+          const dx = nearestEnemyMinion.x - minion.x;
+          const dy = nearestEnemyMinion.y - minion.y;
+          const moveDist = Math.sqrt(dx * dx + dy * dy);
+          if (moveDist > 0) {
+            const vx = (dx / moveDist) * data.speed;
+            const vy = (dy / moveDist) * data.speed;
+            minion.x += vx * 0.016;
+            minion.y += vy * 0.016;
+          }
+        }
+        // Update minion health bar
+        this.updateMinionHealthBar(minion);
+        return true;
+      }
+
+      // PRIORITY 2: No enemy minions nearby - push lane to tower/nexus
+      // Find target (enemy tower, nexus, hero, bot)
       const target = this.findMinionTarget(minion);
 
       if (target) {
@@ -1982,20 +2140,15 @@ export class GameScenePhase3 extends Phaser.Scene {
             minion.y += vy * 0.016;
           }
         } else {
-          // Calculate distance to attack target
+          // Attack target (hero, bot)
           const dist = Phaser.Math.Distance.Between(minion.x, minion.y, target.x, target.y);
-          
           if (dist <= data.attackRange) {
-            // Attack if in range
             if (now - data.lastAttackTime > 1000) {
               data.lastAttackTime = now;
               this.minionAttack(minion, target);
             }
-            // Stop moving when attacking
-            minion.x = minion.x;
-            minion.y = minion.y;
           } else {
-            // Move towards target
+            // Move toward target
             const dx = target.x - minion.x;
             const dy = target.y - minion.y;
             const moveDist = Math.sqrt(dx * dx + dy * dy);
@@ -2027,12 +2180,33 @@ export class GameScenePhase3 extends Phaser.Scene {
       return true;
     });
 
-    // Handle minion collisions dynamically (enemy minions push each other)
+    // Handle minion collisions (all minions push each other)
     this.handleMinionCollisions();
   }
 
+  private findNearestEnemyMinion(minion: Phaser.GameObjects.Container, range: number): Phaser.GameObjects.Container | null {
+    const data = (minion as any).minionData;
+    if (!data) return null;
+
+    let nearest: Phaser.GameObjects.Container | null = null;
+    let nearestDist = range;
+
+    for (const other of this.minions) {
+      const otherData = (other as any).minionData;
+      if (!otherData || otherData.team === data.team || otherData.hp <= 0) continue;
+
+      const dist = Phaser.Math.Distance.Between(minion.x, minion.y, other.x, other.y);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearest = other;
+      }
+    }
+
+    return nearest;
+  }
+
   private handleMinionCollisions() {
-    const minionPushDistance = 20; // Minimum distance between enemy minions
+    const minionPushDistance = 25; // Minimum distance between all minions
 
     for (let i = 0; i < this.minions.length; i++) {
       const minion1 = this.minions[i];
@@ -2044,9 +2218,7 @@ export class GameScenePhase3 extends Phaser.Scene {
         const data2 = (minion2 as any).minionData;
         if (!data2 || data2.hp <= 0) continue;
 
-        // Only push enemy minions
-        if (data1.team === data2.team) continue;
-
+        // ALL minions push each other (allied and enemy)
         const dist = Phaser.Math.Distance.Between(minion1.x, minion1.y, minion2.x, minion2.y);
         if (dist < minionPushDistance && dist > 0) {
           // Push minions apart
@@ -2070,37 +2242,55 @@ export class GameScenePhase3 extends Phaser.Scene {
     const minionTeam = data.team;
     const enemyTeam = minionTeam === this.BLUE_TEAM ? this.RED_TEAM : this.BLUE_TEAM;
 
-    // PRIORITY 1: Enemy towers in lane (highest priority - push objective)
-    const enemyTower = this.towers.find((t) => {
+    // Check if all enemy towers are destroyed (for nexus immunity)
+    const allEnemyTowersDestroyed = this.towers.every((t) => {
       const tData = (t as any).towerData;
-      if (!tData || tData.team !== enemyTeam || tData.hp <= 0) return false;
-      
-      // Check if tower is in same lane (approximate by position)
-      const distToTower = Phaser.Math.Distance.Between(minion.x, minion.y, t.x, t.y);
-      return distToTower < 600; // Tower is in vicinity
+      return !tData || tData.team !== enemyTeam || tData.hp <= 0;
     });
-    if (enemyTower) {
-      const distToTower = Phaser.Math.Distance.Between(minion.x, minion.y, enemyTower.x, enemyTower.y);
+
+    // PRIORITY 1: Enemy towers in lane (highest priority - push objective)
+    // Find the CLOSEST living enemy tower (can't skip towers)
+    let closestTower: any = null;
+    let closestTowerDist = Infinity;
+
+    this.towers.forEach((t) => {
+      const tData = (t as any).towerData;
+      if (!tData || tData.team !== enemyTeam || tData.hp <= 0) return;
+
+      const distToTower = Phaser.Math.Distance.Between(minion.x, minion.y, t.x, t.y);
+      if (distToTower < closestTowerDist) {
+        closestTowerDist = distToTower;
+        closestTower = t;
+      }
+    });
+
+    if (closestTower) {
+      const distToTower = Phaser.Math.Distance.Between(minion.x, minion.y, closestTower.x, closestTower.y);
       if (distToTower <= data.attackRange) {
-        return enemyTower; // In attack range - attack!
+        return closestTower; // In attack range - attack!
       }
       // Move towards tower
-      return { x: enemyTower.x, y: enemyTower.y, isMoveTarget: true };
+      return { x: closestTower.x, y: closestTower.y, isMoveTarget: true };
     }
 
-    // PRIORITY 2: Enemy nexus (final objective)
-    const enemyNexus = this.nexuses.find((n) => {
-      const nData = (n as any).nexusData;
-      return nData && nData.team !== minionTeam && nData.hp > 0;
-    });
-    if (enemyNexus) {
-      const distToNexus = Phaser.Math.Distance.Between(minion.x, minion.y, enemyNexus.x, enemyNexus.y);
-      if (distToNexus <= data.attackRange) {
-        return enemyNexus; // In attack range - attack!
+    // PRIORITY 2: Enemy nexus (ONLY if all towers are destroyed)
+    if (allEnemyTowersDestroyed) {
+      const enemyNexus = this.nexuses.find((n) => {
+        const nData = (n as any).nexusData;
+        return nData && nData.team !== minionTeam && nData.hp > 0;
+      });
+      if (enemyNexus) {
+        const distToNexus = Phaser.Math.Distance.Between(minion.x, minion.y, enemyNexus.x, enemyNexus.y);
+        if (distToNexus <= data.attackRange) {
+          return enemyNexus; // In attack range - attack!
+        }
+        // Move towards nexus
+        return { x: enemyNexus.x, y: enemyNexus.y, isMoveTarget: true };
       }
-      // Move towards nexus
-      return { x: enemyNexus.x, y: enemyNexus.y, isMoveTarget: true };
     }
+
+    // Note: Enemy minions are handled separately in updateMinions() as PRIORITY 1
+    // They are checked before calling this function
 
     // PRIORITY 3: Enemy heroes (aggressive - attack if close)
     if (this.playerSprite && this.playerTeam !== minionTeam) {
@@ -2110,24 +2300,7 @@ export class GameScenePhase3 extends Phaser.Scene {
       }
     }
 
-    // PRIORITY 4: Enemy minions (fight if in the way)
-    const enemyMinion = this.minions.find((m) => {
-      const mData = (m as any).minionData;
-      return (
-        mData &&
-        mData.team !== minionTeam &&
-        mData.hp > 0 &&
-        Phaser.Math.Distance.Between(minion.x, minion.y, m.x, m.y) < 200
-      );
-    });
-    if (enemyMinion) {
-      const dist = Phaser.Math.Distance.Between(minion.x, minion.y, enemyMinion.x, enemyMinion.y);
-      if (dist <= data.attackRange) {
-        return enemyMinion; // In attack range - fight!
-      }
-    }
-
-    // PRIORITY 5: Enemy bots
+    // PRIORITY 4: Enemy bots
     const enemyBot = Array.from(this.bots.values()).find((b) => {
       const botTeam = (b.sprite as any).team as number;
       return botTeam !== minionTeam;
@@ -2145,6 +2318,19 @@ export class GameScenePhase3 extends Phaser.Scene {
   private minionAttack(minion: Phaser.GameObjects.Container, target: any) {
     const data = (minion as any).minionData;
     if (!data) return;
+
+    // Check nexus immunity - can't damage nexus if towers are alive
+    if ((target as any).nexusData) {
+      const enemyTeam = data.team === this.BLUE_TEAM ? this.RED_TEAM : this.BLUE_TEAM;
+      const hasLivingTowers = this.towers.some((t) => {
+        const tData = (t as any).towerData;
+        return tData && tData.team === enemyTeam && tData.hp > 0;
+      });
+      if (hasLivingTowers) {
+        // Nexus is immune - don't attack
+        return;
+      }
+    }
 
     // Show attack visual
     const attackEffect = this.add.circle(minion.x, minion.y, 20, 0xffff00, 0.6);
@@ -2186,7 +2372,7 @@ export class GameScenePhase3 extends Phaser.Scene {
       // Tower
       this.damageTower(target, data.attack);
     } else if ((target as any).nexusData) {
-      // Nexus
+      // Nexus (only if towers are dead)
       this.damageNexus(target, data.attack);
     } else if ((target as any).botId || target instanceof Phaser.Physics.Arcade.Sprite) {
       // Enemy bot
@@ -2208,25 +2394,22 @@ export class GameScenePhase3 extends Phaser.Scene {
   }
 
   private setupBots() {
-    // Spawn bots for both teams - spread across lanes
+    // Spawn bots for single diagonal middle lane - 2 per team
+    // Lane runs from bottom-left (blue nexus) to top-right (red nexus)
     const botConfigs = [
-      // Blue team (bottom-left) - Top lane
+      // Blue team (bottom-left) - spawn near nexus in lane
       { id: "bot1", team: this.BLUE_TEAM, x: 400, y: this.MAP_SIZE - 400, champion: "warrior" },
-      // Blue team - Mid lane  
-      { id: "bot2", team: this.BLUE_TEAM, x: 500, y: this.MAP_SIZE - 600, champion: "assassin" },
-      // Red team (top-right) - Top lane
+      { id: "bot2", team: this.BLUE_TEAM, x: 500, y: this.MAP_SIZE - 500, champion: "assassin" },
+      // Red team (top-right) - spawn near nexus in lane
       { id: "bot3", team: this.RED_TEAM, x: this.MAP_SIZE - 400, y: 400, champion: "mage" },
-      // Red team - Mid lane
-      { id: "bot4", team: this.RED_TEAM, x: this.MAP_SIZE - 600, y: 500, champion: "fighter" },
-      // Red team - Bot lane
-      { id: "bot5", team: this.RED_TEAM, x: this.MAP_SIZE - 500, y: this.MAP_SIZE - 500, champion: "marksman" },
+      { id: "bot4", team: this.RED_TEAM, x: this.MAP_SIZE - 500, y: 500, champion: "fighter" },
     ];
 
     botConfigs.forEach((config) => {
       console.log(`[Bots] Spawning ${config.champion} bot at (${config.x}, ${config.y}) team ${config.team}`);
       this.createBot(config.id, config.team, config.x, config.y, config.champion);
     });
-    
+
     console.log(`[Bots] Total bots spawned: ${this.bots.size}`);
   }
 
@@ -2241,17 +2424,21 @@ export class GameScenePhase3 extends Phaser.Scene {
     sprite.setTint(champion.color);
     sprite.setCollideWorldBounds(true);
     sprite.setDepth(10);
-    
+
     // Set collision box safely
     if (sprite.body) {
       sprite.body.setSize(30, 30);
       sprite.body.setOffset(-15, -15);
     }
-    
+
     (sprite as any).team = team;
     (sprite as any).championSpeed = champion.speed;
     (sprite as any).botId = id; // Store bot ID for damage tracking
     (sprite as any).botHP = champion.hp; // Store bot HP
+    (sprite as any).botMaxHP = champion.maxHp; // Store max HP for calculations
+    (sprite as any).championAttack = champion.attack;
+    (sprite as any).championAttackRange = champion.attackRange;
+    (sprite as any).championData = champion; // Store full champion data
 
     const healthBar = this.add.graphics();
     healthBar.setDepth(11);
@@ -2259,8 +2446,9 @@ export class GameScenePhase3 extends Phaser.Scene {
     const botData: BotData = {
       id,
       state: BotState.LANING,
-      targetX: team === this.BLUE_TEAM ? this.MAP_SIZE - 300 : 300,
-      targetY: team === this.BLUE_TEAM ? 300 : this.MAP_SIZE - 300,
+      // Target is enemy nexus (diagonal lane)
+      targetX: team === this.BLUE_TEAM ? this.MAP_SIZE - 250 : 250,
+      targetY: team === this.BLUE_TEAM ? 250 : this.MAP_SIZE - 250,
       attackTarget: null,
       lastAttackTime: 0,
       behaviorTick: 0,
@@ -2270,86 +2458,241 @@ export class GameScenePhase3 extends Phaser.Scene {
   }
 
   private updateBots(time: number) {
-    this.bots.forEach((bot) => {
-      const now = Date.now();
+    const now = Date.now();
+
+    this.bots.forEach((bot, botId) => {
+      // Check for respawn
+      if (bot.data.isDead && bot.data.respawnTime) {
+        if (now >= bot.data.respawnTime) {
+          this.respawnBot(botId);
+        }
+        return; // Skip update for dead bots
+      }
+
+      const sprite = bot.sprite;
+      const data = bot.data;
+      const champion = (sprite as any).championData as Champion;
+      const botTeam = (sprite as any).team as number;
+      const botHP = (sprite as any).botHP || champion.hp;
+      const botMaxHP = (sprite as any).botMaxHP || champion.maxHp;
+      const botAttack = (sprite as any).championAttack || champion.attack;
+      const botAttackRange = (sprite as any).championAttackRange || champion.attackRange;
+      const botSpeed = (sprite as any).championSpeed || champion.speed;
 
       // Update bot state
-      bot.data.behaviorTick++;
+      data.behaviorTick++;
 
-      // Simple AI: move towards lane, attack enemies nearby
-      const dx = bot.data.targetX - bot.sprite.x;
-      const dy = bot.data.targetY - bot.sprite.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
+      // Check if bot should retreat (low HP)
+      const hpPercent = botHP / botMaxHP;
+      const shouldRetreat = hpPercent < 0.3;
 
-      // Find nearest enemy
+      // Find nearest enemy (priority: low HP targets, then closest)
       let nearestEnemy: Phaser.GameObjects.Container | Phaser.Physics.Arcade.Sprite | null = null;
-      let nearestDist = 300;
-      const botTeam = (bot.sprite as any).team as number;
+      let nearestDist = botAttackRange + 50;
+      let nearestEnemyHP = 1000;
 
       // Check player
-      if (this.playerTeam !== botTeam) {
-        const playerDist = Phaser.Math.Distance.Between(bot.sprite.x, bot.sprite.y, this.playerSprite.x, this.playerSprite.y);
-        if (playerDist < nearestDist) {
+      if (this.playerTeam !== botTeam && this.playerSprite.active) {
+        const playerDist = Phaser.Math.Distance.Between(sprite.x, sprite.y, this.playerSprite.x, this.playerSprite.y);
+        if (playerDist < nearestDist || (playerDist < nearestDist + 100 && this.currentHP < nearestEnemyHP)) {
           nearestDist = playerDist;
           nearestEnemy = this.playerSprite;
+          nearestEnemyHP = this.currentHP;
         }
       }
 
-      // Check other bots
+      // Check other bots (skip dead bots)
       this.bots.forEach((otherBot) => {
         if (otherBot === bot || (otherBot.sprite as any).team === botTeam) return;
+        // Skip dead bots - they can't be targeted
+        if (otherBot.data.isDead) return;
 
-        const enemyDist = Phaser.Math.Distance.Between(bot.sprite.x, bot.sprite.y, otherBot.sprite.x, otherBot.sprite.y);
-        if (enemyDist < nearestDist) {
+        const otherHP = (otherBot.sprite as any).botHP || 500;
+        const enemyDist = Phaser.Math.Distance.Between(sprite.x, sprite.y, otherBot.sprite.x, otherBot.sprite.y);
+
+        // Prioritize low HP enemies
+        if (otherHP < nearestEnemyHP && enemyDist < nearestDist + 50) {
           nearestDist = enemyDist;
           nearestEnemy = otherBot.sprite;
+          nearestEnemyHP = otherHP;
+        } else if (enemyDist < nearestDist) {
+          nearestDist = enemyDist;
+          nearestEnemy = otherBot.sprite;
+          nearestEnemyHP = otherHP;
         }
       });
 
-      if (nearestEnemy && nearestDist < 200) {
-        // Attack mode
-        bot.data.state = BotState.ATTACKING;
+      // Check enemy minions (for farming)
+      let nearestMinion: Phaser.GameObjects.Container | null = null;
+      let nearestMinionDist = botAttackRange + 30;
 
-        // Face enemy
-        const targetX = nearestEnemy.x;
-        const targetY = nearestEnemy.y;
-        const angle = Phaser.Math.Angle.Between(bot.sprite.x, bot.sprite.y, targetX, targetY);
-        bot.sprite.setVelocity(Math.cos(angle) * 50, Math.sin(angle) * 50);
+      this.minions.forEach((minion) => {
+        const minionData = (minion as any).minionData;
+        if (!minionData || minionData.team === botTeam || minionData.hp <= 0) return;
 
-        // Attack
-        if (now - bot.data.lastAttackTime > 1000) {
-          bot.data.lastAttackTime = now;
-          this.createProjectile(bot.sprite.x, bot.sprite.y, targetX, targetY, bot.sprite.tint!, () => {
+        const minionDist = Phaser.Math.Distance.Between(sprite.x, sprite.y, minion.x, minion.y);
+        if (minionDist < nearestMinionDist) {
+          nearestMinionDist = minionDist;
+          nearestMinion = minion;
+        }
+      });
+
+      // Decision making
+      if (shouldRetreat) {
+        // RETREAT MODE - run back to nexus for healing
+        data.state = BotState.RETREATING;
+        // Retreat to nexus position (where healing is)
+        const retreatX = botTeam === this.BLUE_TEAM ? 250 : this.MAP_SIZE - 250;
+        const retreatY = botTeam === this.BLUE_TEAM ? this.MAP_SIZE - 250 : 250;
+        const dx = retreatX - sprite.x;
+        const dy = retreatY - sprite.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist > 100) {
+          const vx = (dx / dist) * botSpeed;
+          const vy = (dy / dist) * botSpeed;
+          sprite.setVelocity(vx, vy);
+        } else {
+          // Safe at nexus, stop and heal
+          sprite.setVelocity(0, 0);
+          // Heal over time at nexus (only when very close to nexus)
+          if (botHP < botMaxHP && dist < 150) {
+            (sprite as any).botHP = Math.min(botHP + 50, botMaxHP);
+            this.updateBotHealthBar(bot);
+          }
+        }
+      } else if (nearestEnemy && nearestDist < botAttackRange + 100) {
+        // ATTACK MODE - engage enemy
+        data.state = BotState.ATTACKING;
+
+        // Kiting: move backward if enemy is too close and we just attacked
+        const tooClose = nearestDist < botAttackRange * 0.5;
+        
+        if (tooClose && now - data.lastAttackTime < 500) {
+          // Move away from enemy
+          const dx = sprite.x - nearestEnemy.x;
+          const dy = sprite.y - nearestEnemy.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist > 0) {
+            const vx = (dx / dist) * botSpeed * 0.8;
+            const vy = (dy / dist) * botSpeed * 0.8;
+            sprite.setVelocity(vx, vy);
+          }
+        } else if (nearestDist > botAttackRange) {
+          // Move toward enemy
+          const dx = nearestEnemy.x - sprite.x;
+          const dy = nearestEnemy.y - sprite.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const vx = (dx / dist) * botSpeed;
+          const vy = (dy / dist) * botSpeed;
+          sprite.setVelocity(vx, vy);
+        } else {
+          // In attack range - stop and attack
+          sprite.setVelocity(0, 0);
+          
+          // Attack if cooldown ready
+          if (now - data.lastAttackTime > 1000) {
+            data.lastAttackTime = now;
+            
+            // Attack nearest enemy (prioritize low HP)
             if (nearestEnemy === this.playerSprite) {
-              this.currentHP -= 10;
-              this.updateHealthManaUI();
-              if (this.currentHP <= 0) {
-                this.playerDeaths++;
-                this.respawnPlayer();
-              }
+              this.createBotProjectile(sprite, this.playerSprite, botAttack, botTeam);
             } else {
-              // Damage other bot
-              const otherBot = Array.from(this.bots.values()).find((b) => b.sprite === nearestEnemy);
-              if (otherBot) {
-                // Simple damage
+              // Check if it's another bot
+              const targetBot = Array.from(this.bots.values()).find(b => b.sprite === nearestEnemy);
+              if (targetBot) {
+                this.createBotProjectile(sprite, nearestEnemy, botAttack, botTeam);
               }
             }
-          });
+          }
         }
-      } else if (dist > 100) {
-        // Move towards target
-        bot.data.state = BotState.LANING;
-        const vx = (dx / dist) * 200;
-        const vy = (dy / dist) * 200;
-        bot.sprite.setVelocity(vx, vy);
+      } else if (nearestMinion && nearestMinionDist < 300) {
+        // FARM MODE - attack minions for gold
+        data.state = BotState.LANING;
+
+        if (nearestMinionDist > botAttackRange) {
+          // Move toward minion
+          const minionX = (nearestMinion as Phaser.GameObjects.Container).x;
+          const minionY = (nearestMinion as Phaser.GameObjects.Container).y;
+          const dx = minionX - sprite.x;
+          const dy = minionY - sprite.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const vx = (dx / dist) * botSpeed;
+          const vy = (dy / dist) * botSpeed;
+          sprite.setVelocity(vx, vy);
+        } else {
+          // Attack minion
+          sprite.setVelocity(0, 0);
+          if (now - data.lastAttackTime > 1000) {
+            data.lastAttackTime = now;
+            this.createBotProjectile(sprite, nearestMinion, botAttack, botTeam);
+          }
+        }
       } else {
-        // Stop
-        bot.sprite.setVelocity(0, 0);
+        // LANE MODE - move toward lane target
+        data.state = BotState.LANING;
+        
+        const dx = data.targetX - sprite.x;
+        const dy = data.targetY - sprite.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist > 100) {
+          const vx = (dx / dist) * botSpeed;
+          const vy = (dy / dist) * botSpeed;
+          sprite.setVelocity(vx, vy);
+        } else {
+          // Wait at lane position, look for enemies
+          sprite.setVelocity(0, 0);
+        }
       }
 
       // Update bot health bar
       this.updateBotHealthBar(bot);
     });
+  }
+
+  private createBotProjectile(
+    shooter: Phaser.Physics.Arcade.Sprite,
+    target: Phaser.GameObjects.Container | Phaser.Physics.Arcade.Sprite,
+    damage: number,
+    shooterTeam: number
+  ) {
+    const projectile = this.add.container(shooter.x, shooter.y);
+    const orb = this.add.circle(0, 0, 8, shooter.tint || 0xffffff);
+    projectile.add(orb);
+    projectile.setDepth(20);
+
+    const angle = Phaser.Math.Angle.Between(shooter.x, shooter.y, target.x, target.y);
+    this.physics.add.existing(projectile);
+    const body = projectile.body as Phaser.Physics.Arcade.Body;
+    if (body) {
+      body.setVelocity(Math.cos(angle) * 600, Math.sin(angle) * 600);
+      body.setCircle(8);
+    }
+
+    // Get target bot ID if targeting a bot
+    let targetBotId: string | null = null;
+    const targetBot = Array.from(this.bots.values()).find(b => b.sprite === target);
+    if (targetBot) {
+      targetBotId = targetBot.data.id;
+    }
+
+    // Store projectile data
+    (projectile as any).projectileData = {
+      damage,
+      shooterTeam,
+      isBotProjectile: true,
+      targetBotId,
+    };
+
+    // Destroy after 2 seconds
+    this.time.delayedCall(2000, () => {
+      if (projectile.active) {
+        projectile.destroy();
+      }
+    });
+
+    this.projectiles.push(projectile);
   }
 
   private damageMinion(minionId: string, damage: number) {
@@ -2401,7 +2744,12 @@ export class GameScenePhase3 extends Phaser.Scene {
     this.updateBotHealthBar(bot);
 
     if (sprite.botHP <= 0) {
-      // Bot died
+      // Bot died - mark as dead for respawn
+      bot.data.isDead = true;
+      bot.data.respawnTime = Date.now() + 5000; // 5 second respawn
+      console.log(`[Bots] Bot ${botId} marked as dead, respawn at ${bot.data.respawnTime} (in 5s)`);
+
+      // Grant gold to killer (player if player's team shot it)
       this.playerGold += 100;
       this.playerKills++;
       this.updateStatsUI();
@@ -2409,13 +2757,107 @@ export class GameScenePhase3 extends Phaser.Scene {
       // Visual death effect
       this.showDeathEffect(bot.sprite.x, bot.sprite.y);
 
-      // Clean up HP bar
-      bot.healthBar.destroy();
+      // Hide bot but don't destroy yet (for respawn)
+      bot.sprite.setVisible(false);
+      if (bot.sprite.body) {
+        bot.sprite.body.enable = false;
+      }
+      bot.healthBar.setVisible(false);
 
-      // Remove bot
-      bot.sprite.destroy();
-      this.bots.delete(botId);
+      // Clean up any projectiles targeting this dead bot
+      this.projectiles = this.projectiles.filter((proj) => {
+        const projData = (proj as any).projectileData;
+        if (projData && projData.targetBotId === botId) {
+          proj.destroy();
+          return false;
+        }
+        return true;
+      });
+
+      console.log(`[Bots] Bot ${botId} died, will respawn in 5s`);
     }
+  }
+
+  // Update bot respawns (called in non-test mode)
+  private updateBotRespawns(time: number) {
+    const now = Date.now();
+    this.bots.forEach((bot, botId) => {
+      if (bot.data.isDead && bot.data.respawnTime) {
+        const timeUntilRespawn = bot.data.respawnTime - now;
+        if (timeUntilRespawn <= 0) {
+          console.log(`[Bots] Respawn timer expired for ${botId}, respawning...`);
+          this.respawnBot(botId);
+        } else {
+          console.log(`[Bots] ${botId} dead, respawn in ${timeUntilRespawn}ms`);
+        }
+      }
+    });
+  }
+
+  private respawnBot(botId: string) {
+    const bot = this.bots.get(botId);
+    console.log(`[Bots] respawnBot called for ${botId}, bot exists: ${!!bot}, isDead: ${bot?.data.isDead}`);
+    if (!bot || !bot.data.isDead) return;
+
+    const champion = (bot.sprite as any).championData as Champion;
+    const botTeam = (bot.sprite as any).team as number;
+
+    // Reset HP
+    (bot.sprite as any).botHP = champion.maxHp;
+    bot.data.isDead = false;
+    bot.data.respawnTime = undefined;
+
+    // Respawn at nexus (base) - diagonal lane positions
+    const respawnX = botTeam === this.BLUE_TEAM ? 400 : this.MAP_SIZE - 400;
+    const respawnY = botTeam === this.BLUE_TEAM ? this.MAP_SIZE - 400 : 400;
+    bot.sprite.setPosition(respawnX, respawnY);
+
+    // Show bot again
+    bot.sprite.setVisible(true);
+    if (bot.sprite.body) {
+      bot.sprite.body.enable = true;
+    }
+    bot.healthBar.setVisible(true);
+
+    // Visual respawn effect
+    this.showRespawnEffect(respawnX, respawnY, botTeam);
+
+    this.updateBotHealthBar(bot);
+    console.log(`[Bots] Bot ${botId} respawned at (${respawnX}, ${respawnY}) with HP: ${champion.maxHp}`);
+  }
+
+  private showRespawnEffect(x: number, y: number, team: number) {
+    const color = team === this.BLUE_TEAM ? 0x0088ff : 0xff8800;
+    const effect = this.add.circle(x, y, 30, color, 0.8);
+    effect.setDepth(100);
+
+    this.tweens.add({
+      targets: effect,
+      scale: 2,
+      alpha: 0,
+      duration: 800,
+      onComplete: () => effect.destroy(),
+    });
+
+    // Show "Respawned!" text
+    const text = this.add.text(x, y - 30, 'RESPAWNED!', {
+      fontSize: '14px',
+      color: team === this.BLUE_TEAM ? '#0088ff' : '#ff8800',
+      fontFamily: 'monospace',
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 3,
+    });
+    text.setDepth(101);
+    text.setOrigin(0.5);
+
+    this.tweens.add({
+      targets: text,
+      y: y - 60,
+      alpha: 0,
+      duration: 1000,
+      onComplete: () => text.destroy(),
+    });
   }
 
   private damageTower(tower: Phaser.GameObjects.Container, damage: number) {
@@ -2530,6 +2972,7 @@ export class GameScenePhase3 extends Phaser.Scene {
   }
 
   private respawnPlayer() {
+    // Respawn at nexus (on diagonal lane)
     const startX = this.playerTeam === this.BLUE_TEAM ? 250 : this.MAP_SIZE - 250;
     const startY = this.playerTeam === this.BLUE_TEAM ? this.MAP_SIZE - 250 : 250;
 

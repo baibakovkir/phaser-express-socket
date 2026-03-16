@@ -10,14 +10,31 @@ const ROLE_COLORS = {
   fighter: 0xff4444,
 };
 
+const ROLE_ICONS: Record<string, string> = {
+  tank: "🛡️",
+  assassin: "⚔️",
+  mage: "🔮",
+  support: "💚",
+  marksman: "🏹",
+  fighter: "👊",
+};
+
 export class ChampionSelectScene extends Phaser.Scene {
   private selectedChampion: Champion | null = null;
   private championCards: Phaser.GameObjects.Container[] = [];
-  private confirmButton!: Phaser.GameObjects.Text;
+  private confirmButton!: Phaser.GameObjects.Container;
+  private continueButton!: Phaser.GameObjects.Container;
   private isTestMode: boolean = false;
   private selectedTeam: number = 1;
   private champions: Champion[] = [];
-  private loadingText!: Phaser.GameObjects.Text;
+  private previewContainer!: Phaser.GameObjects.Container;
+  private currentPhase: "side" | "champion" = "side";
+
+  // Side selection elements
+  private sideElements: Phaser.GameObjects.GameObject[] = [];
+
+  // Champion select elements
+  private championElements: Phaser.GameObjects.GameObject[] = [];
 
   constructor() {
     super({ key: "ChampionSelectScene" });
@@ -32,31 +49,13 @@ export class ChampionSelectScene extends Phaser.Scene {
     const cx = this.cameras.main.centerX;
     const cy = this.cameras.main.centerY;
 
-    // Show loading text
-    this.loadingText = this.add
-      .text(cx, cy, "Loading champions...", {
-        fontSize: "24px",
-        color: "#00ff88",
-        fontFamily: "monospace",
-      })
-      .setOrigin(0.5);
+    // Background gradient
+    this.createBackground();
 
-    // Load champions from API (shared with GameScene)
-    await loadChampionsFromAPI();
-    this.champions = getAllChampions();
-    
-    // Hide loading text
-    this.loadingText.destroy();
-
-    // Background
-    const bg = this.add.rectangle(0, 0, this.cameras.main.width, this.cameras.main.height, 0x1a1a2e);
-    bg.setOrigin(0);
-    bg.setDepth(-1);
-
-    // Title - higher
+    // Main title
     this.add
-      .text(cx, 30, "CHAMPION SELECT", {
-        fontSize: "32px",
+      .text(cx, 25, "CHAMPION SELECT", {
+        fontSize: "28px",
         color: "#ffffff",
         fontFamily: "monospace",
         fontStyle: "bold",
@@ -65,46 +64,414 @@ export class ChampionSelectScene extends Phaser.Scene {
 
     if (this.isTestMode) {
       this.add
-        .text(cx, 58, "Test Mode - Practice with bots", {
-          fontSize: "13px",
+        .text(cx, 50, "🤖 Practice vs Bots", {
+          fontSize: "14px",
           color: "#ff88ff",
           fontFamily: "monospace",
         })
         .setOrigin(0.5);
     }
 
-    // Team selection (test mode only) - higher
-    if (this.isTestMode) {
-      this.createTeamSelection(cx, 82);
-    }
-
-    // Create champion cards in GRID layout - start below team selection
-    // Grid Row 1: y=140, Grid Row 2: y=365
-    this.createChampionGrid(cx, 140);
-
-    // Champion preview area - at bottom
-    this.createPreviewArea(cx, this.cameras.main.height - 120);
-
-    // Confirm button - at very bottom with higher depth
-    this.confirmButton = this.add
-      .text(cx, this.cameras.main.height - 40, "[ CONFIRM ]", {
-        fontSize: "18px",
-        color: "#666666",
+    // Show loading text
+    const loadingText = this.add
+      .text(cx, cy, "Loading champions...", {
+        fontSize: "20px",
+        color: "#00ff88",
         fontFamily: "monospace",
-        backgroundColor: "#333333",
-        padding: { x: 20, y: 8 },
       })
-      .setOrigin(0.5)
-      .setDepth(100);
+      .setOrigin(0.5);
+
+    // Load champions from API
+    await loadChampionsFromAPI();
+    this.champions = getAllChampions();
+    loadingText.destroy();
+
+    // Phase 1: Side Selection
+    this.createSideSelection(cx, cy);
+
+    // Phase 2: Champion Grid (hidden initially)
+    this.createChampionSelect(cx, cy);
+    this.setChampionSelectVisible(false);
+
+    // Preview panel (always visible during champion select)
+    this.createPreviewPanel(cx);
+    this.previewContainer.setVisible(false);
   }
 
-  private createChampionGrid(centerX: number, startY: number) {
-    const cardWidth = 170;
-    const cardHeight = 200;
-    const spacingX = 25;
-    const spacingY = 25;
-    const cols = 3; // 3 columns for 6 champions = 2 rows
-    const rows = 2;
+  private setChampionSelectVisible(visible: boolean) {
+    this.championElements.forEach((el) => {
+      if ('setVisible' in el) {
+        (el as any).setVisible(visible);
+      }
+    });
+  }
+
+  private setSideSelectVisible(visible: boolean) {
+    this.sideElements.forEach((el) => {
+      if ('setVisible' in el) {
+        (el as any).setVisible(visible);
+      }
+    });
+  }
+
+  private createBackground() {
+    const { width, height } = this.cameras.main;
+
+    // Dark background
+    const bg = this.add.rectangle(0, 0, width, height, 0x0f0f1a);
+    bg.setOrigin(0);
+    bg.setDepth(-10);
+
+    // Subtle grid pattern
+    const grid = this.add.graphics();
+    grid.lineStyle(1, 0x1a1a2e, 0.3);
+    const gridSize = 50;
+    for (let x = 0; x < width; x += gridSize) {
+      grid.moveTo(x, 0);
+      grid.lineTo(x, height);
+    }
+    for (let y = 0; y < height; y += gridSize) {
+      grid.moveTo(0, y);
+      grid.lineTo(width, y);
+    }
+    grid.strokePath();
+    grid.setDepth(-9);
+  }
+
+  private createSideSelection(cx: number, cy: number) {
+    // Side selection title
+    const sideTitle = this.add
+      .text(cx, cy - 80, "CHOOSE YOUR SIDE", {
+        fontSize: "24px",
+        color: "#ffffff",
+        fontFamily: "monospace",
+        fontStyle: "bold",
+      })
+      .setOrigin(0.5);
+    this.sideElements.push(sideTitle);
+
+    // Side description
+    const sideDesc = this.add
+      .text(cx, cy - 45, "Select which team you want to play on", {
+        fontSize: "14px",
+        color: "#8888aa",
+        fontFamily: "monospace",
+      })
+      .setOrigin(0.5);
+    this.sideElements.push(sideDesc);
+
+    // Blue team card
+    const blueCard = this.createSideCard(cx - 140, cy + 40, "BLUE", "0088ff", "⚔️", "Bottom Lane", "Traditional side");
+    this.sideElements.push(blueCard);
+
+    // Red team card
+    const redCard = this.createSideCard(cx + 140, cy + 40, "RED", "ff4444", "🔥", "Top Lane", "Mirror side");
+    this.sideElements.push(redCard);
+
+    // Continue button (hidden until side selected)
+    const continueBtnBg = this.add
+      .rectangle(cx, cy + 160, 200, 50, 0x00ff88)
+      .setInteractive({ useHandCursor: true })
+      .setVisible(false);
+    const continueBtnText = this.add
+      .text(cx, cy + 160, "CONTINUE →", {
+        fontSize: "18px",
+        color: "#000000",
+        fontFamily: "monospace",
+        fontStyle: "bold",
+      })
+      .setOrigin(0.5)
+      .setVisible(false);
+
+    this.continueButton = this.add.container(0, 0, [continueBtnBg, continueBtnText]);
+
+    continueBtnBg.on("pointerdown", () => {
+      this.goToChampionSelect();
+    });
+
+    this.sideElements.push(continueBtnBg);
+    this.sideElements.push(continueBtnText);
+
+    // Store reference for showing later
+    (this as any).continueBtnBg = continueBtnBg;
+    (this as any).continueBtnText = continueBtnText;
+  }
+
+  private createSideCard(
+    x: number,
+    y: number,
+    title: string,
+    colorHex: string,
+    icon: string,
+    subtitle: string,
+    description: string
+  ): Phaser.GameObjects.Container {
+    const card = this.add.container(x, y);
+    const cardWidth = 220;
+    const cardHeight = 180;
+    const color = parseInt(colorHex, 16);
+
+    // Card background
+    const bg = this.add.graphics();
+    bg.fillStyle(0x1a1a2e, 1);
+    bg.fillRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
+    bg.lineStyle(3, color, 0.5);
+    bg.strokeRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
+    card.add(bg);
+
+    // Icon
+    const iconText = this.add
+      .text(0, -cardHeight / 2 + 30, icon, {
+        fontSize: "42px",
+      })
+      .setOrigin(0.5);
+    card.add(iconText);
+
+    // Title
+    const titleText = this.add
+      .text(0, -cardHeight / 2 + 75, title, {
+        fontSize: "22px",
+        color: "#" + colorHex,
+        fontFamily: "monospace",
+        fontStyle: "bold",
+      })
+      .setOrigin(0.5);
+    card.add(titleText);
+
+    // Subtitle
+    const subText = this.add
+      .text(0, -cardHeight / 2 + 105, subtitle, {
+        fontSize: "12px",
+        color: "#aabbcc",
+        fontFamily: "monospace",
+      })
+      .setOrigin(0.5);
+    card.add(subText);
+
+    // Description
+    const descText = this.add
+      .text(0, -cardHeight / 2 + 130, description, {
+        fontSize: "10px",
+        color: "#667788",
+        fontFamily: "monospace",
+      })
+      .setOrigin(0.5);
+    card.add(descText);
+
+    // Interactive hit zone
+    const hitZone = this.add.zone(0, 0, cardWidth, cardHeight).setInteractive({ useHandCursor: true });
+    card.add(hitZone);
+
+    // Hover effects
+    hitZone.on("pointerover", () => {
+      bg.clear();
+      bg.fillStyle(0x252540, 1);
+      bg.fillRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
+      bg.lineStyle(3, color, 1);
+      bg.strokeRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
+    });
+
+    hitZone.on("pointerout", () => {
+      bg.clear();
+      bg.fillStyle(0x1a1a2e, 1);
+      bg.fillRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
+      bg.lineStyle(3, color, 0.5);
+      bg.strokeRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
+    });
+
+    hitZone.on("pointerdown", () => {
+      this.selectSide(title === "BLUE" ? 1 : 2, bg, cardWidth, cardHeight, color);
+    });
+
+    // Store for later
+    (card as any).bgGraphics = bg;
+    (card as any).cardWidth = cardWidth;
+    (card as any).cardHeight = cardHeight;
+    (card as any).cardColor = color;
+
+    return card;
+  }
+
+  private selectSide(team: number, bg: Phaser.GameObjects.Graphics, width: number, height: number, color: number) {
+    this.selectedTeam = team;
+
+    // Reset all side cards
+    const cards = this.sideElements.filter(
+      (el) => el instanceof Phaser.GameObjects.Container && el.list.some((item) => item instanceof Phaser.GameObjects.Graphics)
+    ) as Phaser.GameObjects.Container[];
+
+    cards.forEach((card) => {
+      const cardBg = (card as any).bgGraphics as Phaser.GameObjects.Graphics | undefined;
+      const cardWidth = (card as any).cardWidth as number | undefined;
+      const cardHeight = (card as any).cardHeight as number | undefined;
+      const cardColor = (card as any).cardColor as number | undefined;
+      if (cardBg && cardWidth && cardHeight && cardColor) {
+        cardBg.clear();
+        cardBg.fillStyle(0x1a1a2e, 1);
+        cardBg.fillRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
+        cardBg.lineStyle(3, cardColor, 0.5);
+        cardBg.strokeRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 12);
+      }
+    });
+
+    // Highlight selected
+    bg.clear();
+    bg.fillStyle(0x252540, 1);
+    bg.fillRoundedRect(-width / 2, -height / 2, width, height, 12);
+    bg.lineStyle(4, color, 1);
+    bg.strokeRoundedRect(-width / 2, -height / 2, width, height, 12);
+
+    // Show continue button
+    const continueBtnBg = (this as any).continueBtnBg as Phaser.GameObjects.Rectangle | undefined;
+    const continueBtnText = (this as any).continueBtnText as Phaser.GameObjects.Text | undefined;
+    if (continueBtnBg && continueBtnText) {
+      continueBtnBg.setVisible(true);
+      continueBtnText.setVisible(true);
+    }
+  }
+
+  private goToChampionSelect() {
+    this.currentPhase = "champion";
+
+    // Animate out side selection
+    this.tweens.add({
+      targets: this.sideElements,
+      alpha: 0,
+      x: -300,
+      duration: 300,
+      ease: "Power2",
+      onComplete: () => {
+        this.setSideSelectVisible(false);
+        this.setChampionSelectVisible(true);
+
+        // Animate in champion select
+        this.championElements.forEach((el) => {
+          (el as any).setAlpha(0);
+          if (el instanceof Phaser.GameObjects.Container || el instanceof Phaser.GameObjects.Text || el instanceof Phaser.GameObjects.Graphics) {
+            (el as any).x = (el as any).x + 300 || 300;
+          }
+        });
+
+        this.tweens.add({
+          targets: this.championElements,
+          alpha: 1,
+          x: (target: any) => target.x - 300,
+          duration: 300,
+          ease: "Power2",
+        });
+      },
+    });
+  }
+
+  private createChampionSelect(cx: number, cy: number) {
+    // Team indicator
+    const teamColor = this.selectedTeam === 1 ? "0088ff" : "ff4444";
+    const teamName = this.selectedTeam === 1 ? "BLUE" : "RED";
+    const teamText = this.add
+      .text(cx, cy - 200, `PLAYING ON ${teamName}`, {
+        fontSize: "16px",
+        color: "#" + teamColor,
+        fontFamily: "monospace",
+        fontStyle: "bold",
+      })
+      .setOrigin(0.5);
+    this.championElements.push(teamText);
+
+    // Champion grid
+    this.createChampionGrid(cx, cy - 20);
+
+    // Back button
+    const backButton = this.add
+      .text(80, this.cameras.main.height - 40, "← BACK TO SIDE SELECT", {
+        fontSize: "14px",
+        color: "#8888aa",
+        fontFamily: "monospace",
+      })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+
+    backButton.on("pointerdown", () => {
+      this.returnToSideSelect();
+    });
+    this.championElements.push(backButton);
+
+    // Confirm button (bottom right)
+    const confirmBg = this.add.graphics();
+    confirmBg.fillStyle(0x333333, 1);
+    confirmBg.fillRoundedRect(0, 0, 180, 50, 10);
+    confirmBg.lineStyle(2, 0x666666, 1);
+    confirmBg.strokeRoundedRect(0, 0, 180, 50, 10);
+
+    const confirmText = this.add
+      .text(90, 25, "SELECT CHAMPION", {
+        fontSize: "14px",
+        color: "#666666",
+        fontFamily: "monospace",
+        fontStyle: "bold",
+      })
+      .setOrigin(0.5);
+
+    const confirmHitZone = this.add.zone(0, 0, 180, 50).setInteractive({ useHandCursor: true });
+    confirmHitZone.on("pointerdown", () => {
+      this.confirmSelection();
+    });
+
+    this.confirmButton = this.add.container(this.cameras.main.width - 100, this.cameras.main.height - 40, [
+      confirmBg,
+      confirmText,
+      confirmHitZone,
+    ]);
+    this.confirmButton.setVisible(false);
+    this.championElements.push(this.confirmButton);
+
+    // Initially hide all champion elements
+    this.setChampionSelectVisible(false);
+  }
+
+  private returnToSideSelect() {
+    this.currentPhase = "side";
+    this.confirmButton.setVisible(false);
+
+    // Animate out champion select
+    this.tweens.add({
+      targets: this.championElements,
+      alpha: 0,
+      x: (target: any) => target.x + 300,
+      duration: 300,
+      ease: "Power2",
+      onComplete: () => {
+        this.setChampionSelectVisible(false);
+        this.setSideSelectVisible(true);
+
+        // Reset positions and animate in side selection
+        this.sideElements.forEach((el) => {
+          (el as any).setAlpha(0);
+          if (el instanceof Phaser.GameObjects.Container || el instanceof Phaser.GameObjects.Text || el instanceof Phaser.GameObjects.Graphics) {
+            (el as any).x = ((el as any).x || 0) - 300;
+          }
+        });
+
+        this.tweens.add({
+          targets: this.sideElements,
+          alpha: 1,
+          x: (target: any) => target.x + 300,
+          duration: 300,
+          ease: "Power2",
+        });
+      },
+    });
+
+    // Clear preview
+    this.previewContainer.setVisible(false);
+  }
+
+  private createChampionGrid(centerX: number, centerY: number) {
+    const cardWidth = 140;
+    const cardHeight = 180;
+    const spacingX = 20;
+    const spacingY = 20;
+    const cols = 4;
+    const rows = Math.ceil(this.champions.length / cols);
 
     // Calculate total grid size
     const totalWidth = cols * cardWidth + (cols - 1) * spacingX;
@@ -112,8 +479,15 @@ export class ChampionSelectScene extends Phaser.Scene {
 
     // Start position (centered)
     const startX = centerX - totalWidth / 2 + cardWidth / 2;
+    const startY = centerY - totalHeight / 2;
 
-    console.log(`[ChampionGrid] Total size: ${totalWidth}x${totalHeight}, Start: (${startX}, ${startY})`);
+    // Grid background panel
+    const gridBg = this.add.graphics();
+    gridBg.fillStyle(0x151525, 0.9);
+    gridBg.fillRoundedRect(centerX - totalWidth / 2 - 20, startY - 20, totalWidth + 40, totalHeight + 40, 16);
+    gridBg.lineStyle(2, 0x2a2a4e, 1);
+    gridBg.strokeRoundedRect(centerX - totalWidth / 2 - 20, startY - 20, totalWidth + 40, totalHeight + 40, 16);
+    this.championElements.push(gridBg);
 
     this.champions.forEach((champion, index) => {
       const col = index % cols;
@@ -122,270 +496,268 @@ export class ChampionSelectScene extends Phaser.Scene {
       const x = startX + col * (cardWidth + spacingX);
       const y = startY + row * (cardHeight + spacingY);
 
-      console.log(`[ChampionGrid] Card ${index} (${champion.name}): (${x}, ${y})`);
       this.createChampionCard(x, y, cardWidth, cardHeight, champion);
     });
   }
 
-  private createTeamSelection(cx: number, y: number) {
-    const container = this.add.container(0, 0);
-
-    const label = this.add
-      .text(cx, y, "Select Team:", {
-        fontSize: "18px",
-        color: "#ffffff",
-        fontFamily: "monospace",
-      })
-      .setOrigin(0.5);
-    container.add(label);
-
-    // Blue team button
-    const blueBtn = this.add
-      .text(cx - 100, y + 40, "[ BLUE ]", {
-        fontSize: "18px",
-        color: "#ffffff",
-        fontFamily: "monospace",
-        backgroundColor: "#0088ff",
-        padding: { x: 20, y: 10 },
-      })
-      .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
-
-    blueBtn.on("pointerdown", () => {
-      this.selectedTeam = 1;
-      blueBtn.setStyle({ backgroundColor: "#0088ff" });
-      redBtn.setStyle({ backgroundColor: "#ff6600" });
-    });
-    container.add(blueBtn);
-
-    // Red team button
-    const redBtn = this.add
-      .text(cx + 100, y + 40, "[ RED ]", {
-        fontSize: "18px",
-        color: "#ffffff",
-        fontFamily: "monospace",
-        backgroundColor: "#ff6600",
-        padding: { x: 20, y: 10 },
-      })
-      .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
-
-    redBtn.on("pointerdown", () => {
-      this.selectedTeam = 2;
-      blueBtn.setStyle({ backgroundColor: "#0066ff" });
-      redBtn.setStyle({ backgroundColor: "#ff8844" });
-    });
-    container.add(redBtn);
-  }
-
   private createChampionCard(x: number, y: number, width: number, height: number, champion: Champion) {
     const card = this.add.container(x, y);
+    const roleColor = ROLE_COLORS[champion.role as keyof typeof ROLE_COLORS] || 0xffffff;
+    const roleIcon = ROLE_ICONS[champion.role] || "⭐";
 
-    // Card background using Graphics for proper stroke styling
+    // Card background
     const bg = this.add.graphics();
-    bg.fillStyle(0x2a2a3e);
-    bg.fillRect(-width / 2, -height / 2, width, height);
-    bg.lineStyle(2, champion.color);
-    bg.strokeRect(-width / 2, -height / 2, width, height);
-    
-    // Make it interactive
-    const hitZone = this.add.zone(0, 0, width, height).setInteractive({ useHandCursor: true });
+    bg.fillStyle(0x25253a, 1);
+    bg.fillRoundedRect(-width / 2, -height / 2, width, height, 10);
+    bg.lineStyle(2, roleColor, 0.6);
+    bg.strokeRoundedRect(-width / 2, -height / 2, width, height, 10);
     card.add(bg);
-    card.add(hitZone);
 
-    // Champion color indicator
-    const colorBar = this.add.rectangle(0, -height / 2 + 10, width - 14, 5, champion.color);
-    card.add(colorBar);
+    // Role icon badge
+    const roleBadge = this.add.circle(-width / 2 + 20, -height / 2 + 18, 10, roleColor, 0.3);
+    roleBadge.setStrokeStyle(1, roleColor);
+    card.add(roleBadge);
 
-    // Champion name
+    const roleIconText = this.add
+      .text(-width / 2 + 20, -height / 2 + 18, roleIcon, {
+        fontSize: "14px",
+      })
+      .setOrigin(0.5);
+    card.add(roleIconText);
+
+    // Champion color accent bar
+    const accentBar = this.add.rectangle(width / 2 - 8, -height / 2 + 8, 6, 20, champion.color);
+    card.add(accentBar);
+
+    // Champion name (compact)
     const nameText = this.add
-      .text(0, -height / 2 + 22, champion.name, {
+      .text(0, -height / 2 + 35, champion.name, {
         fontSize: "11px",
         color: "#ffffff",
         fontFamily: "monospace",
         fontStyle: "bold",
       })
-      .setOrigin(0.5, 0);
+      .setOrigin(0.5);
     card.add(nameText);
 
-    // Role
+    // Role text
     const roleText = this.add
-      .text(0, -height / 2 + 36, champion.role.toUpperCase(), {
+      .text(0, -height / 2 + 50, champion.role.toUpperCase(), {
         fontSize: "8px",
-        color: "#00ff88",
+        color: "#" + roleColor.toString(16).padStart(6, "0"),
         fontFamily: "monospace",
       })
       .setOrigin(0.5);
     card.add(roleText);
 
-    // Champion sprite placeholder (circle with color)
-    const spriteCircle = this.add.circle(0, -height / 2 + 65, 22, champion.color, 0.8);
-    spriteCircle.setStrokeStyle(2, champion.color);
-    card.add(spriteCircle);
+    // Champion portrait circle
+    const portraitCircle = this.add.circle(0, -height / 2 + 80, 28, champion.color, 0.2);
+    portraitCircle.setStrokeStyle(2, champion.color);
+    card.add(portraitCircle);
 
-    // Stats in compact form
-    const statsY = -height / 2 + 95;
+    // Compact stats
+    const statsY = -height / 2 + 120;
     const stats = [
-      { label: "HP", value: champion.hp || 0 },
-      { label: "ATK", value: champion.attack || 0 },
-      { label: "SPD", value: champion.speed || 0 },
+      { label: "HP", value: champion.hp },
+      { label: "ATK", value: champion.attack },
+      { label: "SPD", value: champion.speed },
     ];
 
     stats.forEach((stat, index) => {
-      const statX = -50 + index * 50;
-      const label = this.add
-        .text(statX, statsY, stat.label, {
-          fontSize: "7px",
-          color: "#666666",
-          fontFamily: "monospace",
-        })
-        .setOrigin(0.5, 0);
-      card.add(label);
-
+      const statX = -45 + index * 45;
       const value = this.add
-        .text(statX, statsY + 10, (stat.value ?? 0).toString(), {
-          fontSize: "10px",
+        .text(statX, statsY, stat.value.toString(), {
+          fontSize: "12px",
           color: "#ffffff",
           fontFamily: "monospace",
           fontStyle: "bold",
         })
         .setOrigin(0.5, 0);
       card.add(value);
+
+      const label = this.add
+        .text(statX, statsY + 12, stat.label, {
+          fontSize: "7px",
+          color: "#667788",
+          fontFamily: "monospace",
+        })
+        .setOrigin(0.5, 0);
+      card.add(label);
     });
+
+    // Interactive hit zone
+    const hitZone = this.add.zone(0, 0, width, height).setInteractive({ useHandCursor: true });
+    card.add(hitZone);
 
     // Hover effects
     hitZone.on("pointerover", () => {
       bg.clear();
-      bg.fillStyle(0x3a3a4e);
-      bg.fillRect(-width / 2, -height / 2, width, height);
-      bg.lineStyle(3, champion.color);
-      bg.strokeRect(-width / 2, -height / 2, width, height);
+      bg.fillStyle(0x303045, 1);
+      bg.fillRoundedRect(-width / 2, -height / 2, width, height, 10);
+      bg.lineStyle(3, roleColor, 1);
+      bg.strokeRoundedRect(-width / 2, -height / 2, width, height, 10);
       this.showPreview(champion);
     });
 
     hitZone.on("pointerout", () => {
       bg.clear();
-      bg.fillStyle(0x2a2a3e);
-      bg.fillRect(-width / 2, -height / 2, width, height);
-      bg.lineStyle(2, champion.color);
-      bg.strokeRect(-width / 2, -height / 2, width, height);
+      bg.fillStyle(0x25253a, 1);
+      bg.fillRoundedRect(-width / 2, -height / 2, width, height, 10);
+      bg.lineStyle(2, roleColor, 0.6);
+      bg.strokeRoundedRect(-width / 2, -height / 2, width, height, 10);
     });
 
     hitZone.on("pointerdown", () => {
-      this.selectChampion(champion, bg, width, height);
+      this.selectChampion(champion, bg, width, height, roleColor);
     });
 
-    // Store bg graphics for later selection updates
+    // Store for later
     (card as any).bgGraphics = bg;
     (card as any).cardWidth = width;
     (card as any).cardHeight = height;
+    (card as any).roleColor = roleColor;
 
     this.championCards.push(card);
+    this.championElements.push(card);
   }
 
-  private createPreviewArea(cx: number, y: number) {
-    // Preview container (hidden initially)
-    const previewContainer = this.add.container(0, 0);
-    previewContainer.setName("preview");
-    previewContainer.setDepth(50); // Ensure it's visible but below button
+  private createPreviewPanel(cx: number) {
+    const y = this.cameras.main.height - 110;
+    const panelWidth = 600;
+    const panelHeight = 140;
 
-    const previewBg = this.add.rectangle(cx, y, 500, 100, 0x000000, 0.8);
-    previewBg.setStrokeStyle(2, 0x00ff88);
-    previewContainer.add(previewBg);
+    this.previewContainer = this.add.container(0, 0);
+    this.previewContainer.setDepth(20);
 
-    const previewTitle = this.add
-      .text(cx - 230, y - 30, "Preview:", {
-        fontSize: "14px",
+    // Panel background
+    const bg = this.add.graphics();
+    bg.fillStyle(0x0a0a15, 0.95);
+    bg.fillRoundedRect(cx - panelWidth / 2, y - panelHeight / 2, panelWidth, panelHeight, 12);
+    bg.lineStyle(2, 0x333355, 1);
+    bg.strokeRoundedRect(cx - panelWidth / 2, y - panelHeight / 2, panelWidth, panelHeight, 12);
+    this.previewContainer.add(bg);
+
+    // Panel border glow
+    const borderGlow = this.add.graphics();
+    borderGlow.lineStyle(3, 0x00ff88, 0.3);
+    borderGlow.strokeRoundedRect(cx - panelWidth / 2 + 2, y - panelHeight / 2 + 2, panelWidth - 4, panelHeight - 4, 10);
+    this.previewContainer.add(borderGlow);
+
+    // Title
+    const title = this.add
+      .text(cx - panelWidth / 2 + 20, y - panelHeight / 2 + 15, "CHAMPION PREVIEW", {
+        fontSize: "11px",
         color: "#00ff88",
         fontFamily: "monospace",
+        fontStyle: "bold",
       })
       .setOrigin(0, 0);
-    previewContainer.add(previewTitle);
+    this.previewContainer.add(title);
 
-    const previewName = this.add
-      .text(cx - 230, y - 5, "", {
-        fontSize: "18px",
+    // Champion name
+    const nameText = this.add
+      .text(cx - panelWidth / 2 + 20, y - panelHeight / 2 + 35, "", {
+        fontSize: "22px",
         color: "#ffffff",
         fontFamily: "monospace",
         fontStyle: "bold",
       })
       .setOrigin(0, 0);
-    previewContainer.add(previewName);
+    this.previewContainer.add(nameText);
 
-    const previewRole = this.add
-      .text(cx - 230, y + 15, "", {
+    // Role and stats
+    const roleText = this.add
+      .text(cx - panelWidth / 2 + 20, y - panelHeight / 2 + 62, "", {
         fontSize: "12px",
-        color: "#888888",
+        color: "#8899aa",
         fontFamily: "monospace",
       })
       .setOrigin(0, 0);
-    previewContainer.add(previewRole);
+    this.previewContainer.add(roleText);
 
-    const previewDesc = this.add
-      .text(cx - 230, y + 35, "", {
-        fontSize: "11px",
-        color: "#aaaaaa",
+    // Abilities hint
+    const abilitiesHint = this.add
+      .text(cx - panelWidth / 2 + 20, y + panelHeight / 2 - 20, "Hover over a champion to see details", {
+        fontSize: "10px",
+        color: "#556677",
         fontFamily: "monospace",
-        wordWrap: { width: 480 },
       })
       .setOrigin(0, 0);
-    previewContainer.add(previewDesc);
+    this.previewContainer.add(abilitiesHint);
 
-    previewContainer.setVisible(false);
+    this.previewContainer.setVisible(false);
   }
 
   private showPreview(champion: Champion) {
-    const previewContainer = this.children.getByName("preview") as Phaser.GameObjects.Container | undefined;
-    if (!previewContainer) return;
+    this.previewContainer.setVisible(true);
 
-    previewContainer.setVisible(true);
+    const roleColor = ROLE_COLORS[champion.role as keyof typeof ROLE_COLORS] || 0xffffff;
+    const roleColorHex = "#" + roleColor.toString(16).padStart(6, "0");
+    const roleIcon = ROLE_ICONS[champion.role] || "⭐";
 
-    const texts = previewContainer.list.filter((c) => c instanceof Phaser.GameObjects.Text) as Phaser.GameObjects.Text[];
+    const texts = this.previewContainer.list.filter((c) => c instanceof Phaser.GameObjects.Text) as Phaser.GameObjects.Text[];
+
     if (texts.length >= 4) {
       texts[1].setText(champion.name);
-      texts[2].setText(`${champion.role.toUpperCase()} • HP: ${champion.hp} • ATK: ${champion.attack}`);
-      texts[3].setText(`${champion.role} champion with ${champion.hp} HP and ${champion.attack} attack power`);
+      texts[2].setText(`${roleIcon} ${champion.role.toUpperCase()}  •  HP: ${champion.hp}  •  ATK: ${champion.attack}  •  SPD: ${champion.speed}`);
+      texts[2].setColor(roleColorHex);
+
+      // Update abilities hint
+      if (champion.abilities && champion.abilities.length > 0) {
+        const abilityNames = champion.abilities.map((a) => `[${a.key}] ${a.name}`).join("  ");
+        texts[3].setText(`Abilities: ${abilityNames}`);
+        texts[3].setColor("#8899aa");
+      } else {
+        texts[3].setText("Basic attacks and auto-abilities");
+        texts[3].setColor("#556677");
+      }
     }
   }
 
-  private selectChampion(champion: Champion, bg: Phaser.GameObjects.Graphics, width: number, height: number) {
-    // Deselect previous - reset all cards
+  private selectChampion(
+    champion: Champion,
+    bg: Phaser.GameObjects.Graphics,
+    width: number,
+    height: number,
+    roleColor: number
+  ) {
+    // Deselect previous
     this.championCards.forEach((card) => {
       const cardBg = (card as any).bgGraphics as Phaser.GameObjects.Graphics | undefined;
       const cardWidth = (card as any).cardWidth as number | undefined;
       const cardHeight = (card as any).cardHeight as number | undefined;
-      if (cardBg && cardWidth && cardHeight) {
+      const cardRoleColor = (card as any).roleColor as number | undefined;
+      if (cardBg && cardWidth && cardHeight && cardRoleColor) {
         cardBg.clear();
-        cardBg.fillStyle(0x2a2a3e);
-        cardBg.fillRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight);
-        cardBg.lineStyle(3, 0xffffff);
-        cardBg.strokeRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight);
+        cardBg.fillStyle(0x25253a, 1);
+        cardBg.fillRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 10);
+        cardBg.lineStyle(2, cardRoleColor, 0.6);
+        cardBg.strokeRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 10);
       }
     });
 
     // Select new
     this.selectedChampion = champion;
     bg.clear();
-    bg.fillStyle(0x2a2a3e);
-    bg.fillRect(-width / 2, -height / 2, width, height);
-    bg.lineStyle(5, 0x00ff88);
-    bg.strokeRect(-width / 2, -height / 2, width, height);
+    bg.fillStyle(0x303045, 1);
+    bg.fillRoundedRect(-width / 2, -height / 2, width, height, 10);
+    bg.lineStyle(4, 0x00ff88, 1);
+    bg.strokeRoundedRect(-width / 2, -height / 2, width, height, 10);
 
-    // Enable confirm button - remove old listeners first
-    this.confirmButton.removeAllListeners();
-    this.confirmButton
-      .setText("[ CONFIRM ]")
-      .setStyle({
-        color: "#ffffff",
-        backgroundColor: "#00ff88",
-      })
-      .setInteractive({ useHandCursor: true })
-      .on("pointerdown", () => {
-        console.log("[ChampionSelect] Confirm button clicked!");
-        this.confirmSelection();
-      });
-    
-    console.log("[ChampionSelect] Champion selected:", champion.name);
+    // Enable confirm button
+    const confirmBg = this.confirmButton.list[0] as Phaser.GameObjects.Graphics;
+    const confirmText = this.confirmButton.list[1] as Phaser.GameObjects.Text;
+
+    confirmBg.clear();
+    confirmBg.fillStyle(0x00ff88, 1);
+    confirmBg.fillRoundedRect(0, 0, 180, 50, 10);
+    confirmBg.lineStyle(2, 0x00ff88, 1);
+    confirmBg.strokeRoundedRect(0, 0, 180, 50, 10);
+
+    confirmText.setColor("#000000");
+    confirmText.setText("PLAY AS " + champion.name.toUpperCase());
+
+    this.confirmButton.setVisible(true);
   }
 
   private confirmSelection() {

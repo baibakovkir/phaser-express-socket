@@ -1,8 +1,6 @@
 import Phaser from "phaser";
 import { network, Lobby, Player } from "../network/socket.js";
 
-const WEB_URL = import.meta.env.VITE_WEB_URL || "http://localhost:5174";
-
 export class MenuScene extends Phaser.Scene {
   private statusText!: Phaser.GameObjects.Text;
   private lobbyPanel!: Phaser.GameObjects.Container;
@@ -47,9 +45,9 @@ export class MenuScene extends Phaser.Scene {
       this.statusText.setText(`Logged in as ${player.username}`);
     } else {
       this.statusText.setText("Not authenticated - Redirecting to login...");
-      // Redirect to web app for login
+      // Redirect to login page (same origin)
       setTimeout(() => {
-        window.location.href = WEB_URL + "/login";
+        window.location.href = "/login";
       }, 2000);
     }
 
@@ -76,7 +74,7 @@ export class MenuScene extends Phaser.Scene {
       const matchData = data as { matchId: string; team1: unknown[]; team2: unknown[] };
       this.statusText.setText("Match found!");
       this.time.delayedCall(1500, () => {
-        this.scene.start("GameScene", { matchId: matchData.matchId });
+        this.scene.start("GameScenePhase3", { matchId: matchData.matchId });
       });
     });
 
