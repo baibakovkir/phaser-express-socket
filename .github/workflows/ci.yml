@@ -107,17 +107,14 @@ jobs:
           chmod 600 ~/.ssh/id_deploy
           chmod 644 ~/.ssh/known_hosts
           ssh-keygen -y -f ~/.ssh/id_deploy >/dev/null
-      - name: Upload configuration and secrets
+      - name: Upload configuration
         env:
           VM_HOST: ${{ secrets.VM_HOST || '176.123.163.174' }}
           VM_PORT: ${{ secrets.VM_PORT }}
           VM_USER: ${{ secrets.VM_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.NINJAS_POSTGRES_PASSWORD }}
-          DATABASE_URL: ${{ secrets.NINJAS_DATABASE_URL }}
-          JWT_SECRET: ${{ secrets.NINJAS_JWT_SECRET }}
         run: |
           set -eu
-          for required in VM_USER POSTGRES_PASSWORD DATABASE_URL JWT_SECRET; do
+          for required in VM_USER; do
             if [ -z "${!required}" ]; then
               echo "::error::Missing deploy secret: $required"
               exit 1
@@ -126,10 +123,8 @@ jobs:
           port="${VM_PORT:-22}"
           remote_dir="/tmp/ninjas-deploy-${GITHUB_RUN_ID}"
           ssh -i ~/.ssh/id_deploy -p "$port" "$VM_USER@$VM_HOST" "mkdir -p '$remote_dir'"
-          scp -i ~/.ssh/id_deploy -P "$port" compose.prod.yml ops/nginx-site.conf ops/bootstrap-host.sh ops/deploy.sh "$VM_USER@$VM_HOST:$remote_dir/"
-          ssh -i ~/.ssh/id_deploy -p "$port" "$VM_USER@$VM_HOST" "sudo install -d -m 750 /opt/ninjas-x && sudo chown '$VM_USER' /opt/ninjas-x && cp '$remote_dir/'* /opt/ninjas-x/ && chmod 750 /opt/ninjas-x/bootstrap-host.sh /opt/ninjas-x/deploy.sh && rm -rf '$remote_dir'"
-          printf 'POSTGRES_PASSWORD=%s\nDATABASE_URL=%s\nJWT_SECRET=%s\n' "$POSTGRES_PASSWORD" "$DATABASE_URL" "$JWT_SECRET" |
-            ssh -i ~/.ssh/id_deploy -p "$port" "$VM_USER@$VM_HOST" "umask 077; cat > /opt/ninjas-x/.env.next && mv /opt/ninjas-x/.env.next /opt/ninjas-x/.env"
+          scp -i ~/.ssh/id_deploy -P "$port" compose.prod.yml ops/nginx-site.conf ops/bootstrap-host.sh ops/deploy.sh ops/init-env.sh "$VM_USER@$VM_HOST:$remote_dir/"
+          ssh -i ~/.ssh/id_deploy -p "$port" "$VM_USER@$VM_HOST" "sudo install -d -m 750 /opt/ninjas-x && sudo chown '$VM_USER' /opt/ninjas-x && cp '$remote_dir/'* /opt/ninjas-x/ && chmod 750 /opt/ninjas-x/bootstrap-host.sh /opt/ninjas-x/deploy.sh /opt/ninjas-x/init-env.sh && rm -rf '$remote_dir' && /opt/ninjas-x/init-env.sh"
       - name: Set up HTTPS routing
         env:
           VM_HOST: ${{ secrets.VM_HOST || '176.123.163.174' }}

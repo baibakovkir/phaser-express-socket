@@ -65,7 +65,7 @@ Production-образ из [Dockerfile](Dockerfile) обслуживает са�
 
 GitHub Actions сначала выполняет сборку, серверные тесты и Playwright, затем публикует образ `ghcr.io/baibakovkir/ninjas-x:sha-<commit>` и развёртывает его через SSH. Deploy проверяет `/health` и публичный HTTPS-адрес; при ошибке возвращает предыдущий образ. Миграции БД автоматически назад не откатываются, поэтому несовместимые изменения схемы требуют отдельного плана.
 
-Для первого деплоя нужны GitHub Secrets `VM_SSH_KEY`, `VM_KNOWN_HOSTS`, `VM_USER`, при нестандартном адресе/порте — `VM_HOST`, `VM_PORT`, а также `NINJAS_POSTGRES_PASSWORD`, `NINJAS_DATABASE_URL` (адрес контейнера `postgres:5432`, пароль URL-encoded) и `NINJAS_JWT_SECRET` (не менее 32 символов). Они записываются в `/opt/ninjas-x/.env` с правами владельца; образ не содержит секретов. На VPS нужны Docker Compose, Nginx, Certbot и возможность выполнить `sudo` для настройки сайта. Шаблон значений — [ops/production.env.example](ops/production.env.example); реальные значения в Git не добавляются.
+Для первого деплоя нужны GitHub Secrets `VM_SSH_KEY`, `VM_KNOWN_HOSTS`, `VM_USER`, при нестандартном адресе/порте — `VM_HOST`, `VM_PORT`. Скрипт [ops/init-env.sh](ops/init-env.sh) один раз генерирует пароли PostgreSQL и JWT на VPS в `/opt/ninjas-x/.env` с правами владельца; при следующих релизах он сохраняет существующий файл. Образ не содержит секретов. На VPS нужны Docker Compose, Nginx, Certbot, OpenSSL и возможность выполнить `sudo` для настройки сайта. Шаблон значений — [ops/production.env.example](ops/production.env.example); реальные значения в Git не добавляются.
 
 ## Совместная работа
 

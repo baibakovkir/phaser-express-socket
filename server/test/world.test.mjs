@@ -96,3 +96,25 @@ test('database ability costs mana and obeys cooldown and range', () => {
   assert.equal(blue.mana, 75);
   assert.equal(world.snapshot().effects.at(-1).kind, 'nova');
 });
+
+test('a decisive ability ends the tick before the losing team can retaliate', () => {
+  const hero = {
+    id: 'fighter', maxHp: 100, maxMana: 100, speed: 300, attack: 10,
+    abilities: [{ key: '1', cooldown: 1000, manaCost: 0, damage: 100, range: 200 }],
+  };
+  const world = new MatchWorld('decisive-test', players, [hero]);
+  world.selectHero('blue', 'fighter');
+  world.selectHero('red', 'fighter');
+  const blue = world.players.get('blue');
+  const red = world.players.get('red');
+  blue.kills = 4;
+  red.kills = 4;
+  red.x = blue.x + 100;
+  red.y = blue.y;
+  world.setInput('blue', { seq: 1, dx: 0, dy: 0, attack: false, cast: '1' });
+  world.setInput('red', { seq: 1, dx: 0, dy: 0, attack: false, cast: '1' });
+  world.step();
+  assert.equal(world.winnerTeam, 1);
+  assert.equal(blue.hp, 100);
+  assert.equal(red.hp, 0);
+});

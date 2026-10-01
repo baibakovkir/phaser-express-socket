@@ -158,8 +158,9 @@ export class MatchWorld {
     for (const player of players) {
       if (player.queuedCast && player.hp > 0) this.cast(player, player.queuedCast, players);
       player.queuedCast = undefined;
+      if (this.winnerTeam) break;
     }
-    for (const player of players) {
+    for (const player of this.winnerTeam ? [] : players) {
       if (player.hp <= 0 || !player.input.attack || this.tick < player.nextAttackTick) continue;
       const target = players
         .filter(other => other.team !== player.team && other.hp > 0 && Math.hypot(other.x - player.x, other.y - player.y) <= ATTACK_RANGE)
