@@ -21,7 +21,7 @@ while [ "$deployed" = true ] && [ "$attempt" -lt 18 ]; do
   sleep 5
 done
 if [ "$attempt" -ge 18 ]; then deployed=false; fi
-if [ "$deployed" = true ] && ! curl --fail --silent --show-error --max-time 15 https://ninjas.baibakovkir.space/ >/dev/null; then
+if [ "$deployed" = true ] && ! curl --fail --silent --show-error --location --max-redirs 5 --max-time 15 https://ninjas.baibakovkir.space/health >/dev/null; then
   deployed=false
 fi
 
