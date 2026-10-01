@@ -1,13 +1,16 @@
 import React, { useRef, useState, useCallback } from 'react';
 import { GameContainer, GameContainerHandle } from './components/GameContainer';
-import { HUD } from './components/HUD';
 import { Menu } from './components/Menu';
 import { HeroSelect } from './components/ChampionSelect';
 import { useGameStore } from './store/gameStore';
 import { EventBus } from './events/EventBus';
 
 import { BootScene } from './scenes/BootScene';
-import { GameScenePhase3 } from './scenes/GameScenePhase3';
+import { NetworkGameScene } from './scenes/NetworkGameScene';
+import type { MatchFoundData } from './network/socket';
+import { network } from './network/socket';
+
+const GAME_SCENES = [BootScene, NetworkGameScene];
 
 type GamePhase = 'menu' | 'heroSelect' | 'playing';
 
@@ -19,14 +22,17 @@ const App: React.FC = () => {
 
   const startGame = useGameStore((state) => state.startGame);
 
-  const handleGameStart = useCallback((matchId: string) => {
-    console.log('[App] Game started from lobby, matchId:', matchId);
-    setMatchId(matchId);
-    setTeam(Math.random() > 0.5 ? 'blue' : 'red');
+  const handleGameStart = useCallback((match: MatchFoundData) => {
+    const participant = match.participants.find(item => item.playerId === network.getPlayer()?.id);
+    if (!participant) return;
+    setMatchId(match.matchId);
+    setTeam(participant.team === 1 ? 'blue' : 'red');
     setPhase('heroSelect');
   }, []);
 
-  const handleHeroComplete = useCallback((selectedHero: string) => {
+  const handleHeroComplete = useCallback(async (selectedHero: string) => {
+    const result = await network.selectHero(matchId, selectedHero);
+    if (!result.success) throw new Error(result.error || 'Hero selection failed');
     console.log('[App] Hero locked, starting game scene...');
     
     const game = gameRef.current?.getGame();
@@ -38,9 +44,7 @@ const App: React.FC = () => {
         game.scene.stop('BootScene');
       }
       
-      // Start GameScenePhase3
-      console.log('[App] Starting GameScenePhase3...');
-      game.scene.start('GameScenePhase3', {
+      game.scene.start('NetworkGameScene', {
         matchId,
         championId: selectedHero,
         team: team === 'blue' ? 0 : 1,
@@ -49,9 +53,7 @@ const App: React.FC = () => {
       startGame();
       EventBus.emit('game:started');
       setPhase('playing');
-    } else {
-      console.error('[App] ERROR: No Phaser game instance!');
-    }
+    } else throw new Error('Phaser game is unavailable');
   }, [matchId, team, startGame]);
 
   return (
@@ -62,7 +64,7 @@ const App: React.FC = () => {
           ref={gameRef}
           width={1280}
           height={720}
-          scene={[BootScene, GameScenePhase3]}
+          scene={GAME_SCENES}
         />
       </div>
 
@@ -80,12 +82,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* HUD - Only when playing */}
-      {phase === 'playing' && (
-        <div className="absolute inset-0 z-20 pointer-events-none">
-          <HUD />
-        </div>
-      )}
     </div>
   );
 };

@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@moba/shared": "0.1.0",
     "autoprefixer": "^10.4.27",
     "phaser": "3.87.0",
     "postcss": "^8.5.8",

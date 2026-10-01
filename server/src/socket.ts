@@ -4,6 +4,9 @@ import { matchmakingQueue } from "./queue/matchmaking.queue.js";
 import { lobbyManager, LobbyPlayer } from "./lib/lobby.js";
 import { verifySocketToken, AuthPayload } from "./middleware/auth.middleware.js";
 import { prisma } from "./lib/prisma.js";
+import { matchManager } from './match/manager.js';
+import { removeQueuedPlayer } from './queue/matchmaking.worker.js';
+import type { GameInput } from '@moba/shared';
 
 interface AuthenticatedSocket extends Socket {
   auth?: AuthPayload;
@@ -22,6 +25,7 @@ export function initSocket(httpServer: HttpServer) {
       methods: ["GET", "POST"],
     },
   });
+  matchManager.init(io);
 
   io.on("connection", (socket: AuthenticatedSocket) => {
     console.log(`[socket] client connected: ${socket.id}`);
@@ -195,7 +199,7 @@ export function initSocket(httpServer: HttpServer) {
         }
 
         // Notify kicked player
-        const targetSocket = io.sockets.sockets.get(data.targetId);
+        const targetSocket = result.socketId ? io.sockets.sockets.get(result.socketId) : undefined;
         if (targetSocket) {
           targetSocket.emit("lobby:kicked");
           targetSocket.leave(lobbyId);
@@ -209,6 +213,33 @@ export function initSocket(httpServer: HttpServer) {
     socket.on("lobby:list", (callback: (response: { lobbies: unknown[] }) => void) => {
       const lobbies = lobbyManager.getAllPublicLobbies().map(sanitizeLobby);
       callback({ lobbies });
+    });
+
+    socket.on('lobby:start', async (callback: (response: { success: boolean; error?: string }) => void) => {
+      if (!socket.auth) return callback({ success: false, error: 'Not authenticated' });
+      const lobbyId = lobbyManager.getPlayerLobbyId(socket.auth.playerId);
+      const lobby = lobbyId && lobbyManager.getLobby(lobbyId);
+      if (!lobby || lobby.hostId !== socket.auth.playerId) return callback({ success: false, error: 'Only the host can start this lobby' });
+      try {
+        const result = await matchManager.create(lobby.players.map(player => ({
+          playerId: player.playerId,
+          username: player.username,
+          socketId: player.socketId,
+        })));
+        if (result.success) lobbyManager.deleteLobby(lobby.id);
+        callback({ success: result.success, error: result.error });
+      } catch (error) {
+        console.error('[lobby] failed to start match', error);
+        callback({ success: false, error: 'Failed to start match' });
+      }
+    });
+
+    socket.on('match:select-hero', (data: { matchId: string; heroId: string }, callback: (response: { success: boolean; error?: string }) => void) => {
+      if (!socket.auth || !data || typeof data.matchId !== 'string' || typeof data.heroId !== 'string') {
+        return callback({ success: false, error: 'Invalid selection' });
+      }
+      const success = matchManager.selectHero(socket.auth.playerId, socket.id, data.matchId, data.heroId);
+      callback({ success, ...(!success ? { error: 'Hero selection rejected' } : {}) });
     });
 
     // Queue: Join (from lobby)
@@ -234,7 +265,7 @@ export function initSocket(httpServer: HttpServer) {
         mmr: player.mmr,
         username: player.username,
         joinedAt: Date.now(),
-      });
+      }, { jobId: player.id, removeOnComplete: true, removeOnFail: true });
 
       socket.emit("queue:joined");
       callback?.({ success: true });
@@ -247,18 +278,17 @@ export function initSocket(httpServer: HttpServer) {
       }
 
       console.log(`[queue] player ${socket.auth.playerId} leaving matchmaking`);
+      removeQueuedPlayer(socket.auth.playerId);
+      const job = await matchmakingQueue.getJob(socket.auth.playerId);
+      if (job) await job.remove().catch(() => undefined);
       socket.emit("queue:left");
       callback({ success: true });
     });
 
     // Game: Input (for state sync)
-    socket.on("game:input", (data: { matchId: string; input: unknown; tick: number }) => {
-      if (!socket.auth) return;
-      socket.to(data.matchId).emit("game:input", {
-        playerId: socket.id,
-        input: data.input,
-        tick: data.tick,
-      });
+    socket.on("game:input", (data: { matchId: string; input: GameInput }) => {
+      if (!socket.auth || !data || typeof data.matchId !== 'string' || !data.input) return;
+      matchManager.input(socket.auth.playerId, socket.id, data.matchId, data.input);
     });
 
     // Disconnect handling
@@ -266,6 +296,9 @@ export function initSocket(httpServer: HttpServer) {
       console.log(`[socket] client disconnected: ${socket.id}`);
 
       if (socket.auth) {
+        matchManager.disconnect(socket.auth.playerId);
+        removeQueuedPlayer(socket.auth.playerId);
+        void matchmakingQueue.getJob(socket.auth.playerId).then(job => job?.remove()).catch(error => console.error('[queue] cleanup failed', error));
         // Leave any lobby
         const result = lobbyManager.leaveLobby(socket.auth.playerId);
         if (result.lobby) {

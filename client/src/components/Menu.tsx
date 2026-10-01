@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { network, Lobby, Player } from '../network/socket';
-import { EventBus } from '../events/EventBus';
+import { network, Lobby, Player, MatchFoundData } from '../network/socket';
 
 interface MenuProps {
-  onGameStart?: (matchId: string) => void;
+  onGameStart?: (match: MatchFoundData) => void;
 }
 
 export const Menu: React.FC<MenuProps> = ({ onGameStart }) => {
@@ -14,6 +13,7 @@ export const Menu: React.FC<MenuProps> = ({ onGameStart }) => {
   const [isPrivate, setIsPrivate] = useState(false);
   const [inQueue, setInQueue] = useState(false);
   const [isHost, setIsHost] = useState(false);
+  const [publicLobbies, setPublicLobbies] = useState<Lobby[]>([]);
 
   useEffect(() => {
     const init = async () => {
@@ -61,12 +61,9 @@ export const Menu: React.FC<MenuProps> = ({ onGameStart }) => {
     });
 
     network.on('match:found', (data) => {
-      const matchData = data as { matchId: string };
+      const matchData = data as MatchFoundData;
       setStatus('Match found!');
-      setTimeout(() => {
-        onGameStart?.(matchData.matchId);
-        EventBus.emit('game:started');
-      }, 1500);
+      onGameStart?.(matchData);
     });
 
     return () => {
@@ -89,6 +86,21 @@ export const Menu: React.FC<MenuProps> = ({ onGameStart }) => {
       setStatus(`Failed: ${result.error}`);
     }
   }, [lobbyName, isPrivate]);
+
+  const handleRefreshLobbies = useCallback(async () => {
+    const result = await network.listLobbies();
+    setPublicLobbies(result.lobbies);
+  }, []);
+
+  const handleJoinLobby = useCallback(async (lobbyId: string) => {
+    const result = await network.joinLobby(lobbyId);
+    if (result.success && result.lobby) {
+      setLobby(result.lobby);
+      setStatus(`Joined ${result.lobby.name}`);
+    } else {
+      setStatus(`Failed: ${result.error}`);
+    }
+  }, []);
 
   const handleJoinQueue = useCallback(async () => {
     const result = await network.joinQueue();
@@ -118,12 +130,9 @@ export const Menu: React.FC<MenuProps> = ({ onGameStart }) => {
   const handleStartGame = useCallback(async () => {
     if (!lobby) return;
     setStatus('Starting game...');
-    const matchId = `custom_${lobby.id}_${Date.now()}`;
-    setTimeout(() => {
-      onGameStart?.(matchId);
-      EventBus.emit('game:started');
-    }, 1000);
-  }, [lobby, onGameStart]);
+    const result = await network.startLobby();
+    if (!result.success) setStatus(`Failed: ${result.error}`);
+  }, [lobby]);
 
   const handleKickPlayer = useCallback(async (playerId: string) => {
     const result = await network.kickPlayer(playerId);
@@ -170,7 +179,8 @@ export const Menu: React.FC<MenuProps> = ({ onGameStart }) => {
 
       {/* No Lobby - Show creation options */}
       {!lobby ? (
-        <div className="flex gap-6 w-full max-w-4xl justify-center">
+        <div className="flex flex-col gap-6 w-full max-w-4xl">
+        <div className="flex gap-6 w-full justify-center">
           {/* Create Lobby */}
           <div className="bg-gray-800 p-8 rounded-xl border border-gray-700 w-96">
             <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
@@ -229,6 +239,20 @@ export const Menu: React.FC<MenuProps> = ({ onGameStart }) => {
             )}
           </div>
         </div>
+        <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-white">Public lobbies</h2>
+            <button onClick={handleRefreshLobbies} className="px-4 py-2 bg-cyan-700 text-white rounded">Refresh</button>
+          </div>
+          {publicLobbies.length === 0 && <p className="text-gray-400">Refresh to find a lobby.</p>}
+          {publicLobbies.map(item => (
+            <div key={item.id} className="flex justify-between items-center py-2 border-t border-gray-700">
+              <span className="text-white">{item.name} ({item.players.length}/6)</span>
+              <button onClick={() => handleJoinLobby(item.id)} className="px-4 py-2 bg-green-700 text-white rounded">Join</button>
+            </div>
+          ))}
+        </div>
+        </div>
       ) : (
         /* Lobby View */
         <div className="bg-gray-800 p-8 rounded-xl border-2 border-cyan-700 w-full max-w-2xl">
@@ -252,7 +276,7 @@ export const Menu: React.FC<MenuProps> = ({ onGameStart }) => {
           {/* Players List */}
           <div className="mb-8">
             <h3 className="text-gray-400 font-semibold mb-4 text-lg">
-              👥 Players ({lobby.players.length}/5)
+              👥 Players ({lobby.players.length}/6)
             </h3>
             <div className="space-y-3">
               {lobby.players.map((p, index) => {

@@ -34,7 +34,7 @@ export interface Ability {
 interface HeroSelectProps {
   matchId: string;
   team: 'blue' | 'red';
-  onComplete?: (heroId: string) => void;
+  onComplete?: (heroId: string) => Promise<void>;
 }
 
 const ROLES = ['tank', 'assassin', 'mage', 'support', 'marksman', 'fighter'] as const;
@@ -94,7 +94,7 @@ export const HeroSelect: React.FC<HeroSelectProps> = ({ matchId, team, onComplet
     });
   }, [heroes, filterRole, searchTerm]);
 
-  const handleLockHero = useCallback(() => {
+  const handleLockHero = useCallback(async () => {
     if (!selectedHero) return;
 
     setIsLocked(true);
@@ -107,10 +107,12 @@ export const HeroSelect: React.FC<HeroSelectProps> = ({ matchId, team, onComplet
       team,
     });
 
-    setTimeout(() => {
-      console.log('[HeroSelect] Calling onComplete');
-      onComplete?.(selectedHero.id);
-    }, 1500);
+    try {
+      await onComplete?.(selectedHero.id);
+    } catch (error) {
+      setIsLocked(false);
+      setStatus(error instanceof Error ? error.message : 'Could not select hero');
+    }
   }, [selectedHero, matchId, team, onComplete]);
 
   if (isLoading) {

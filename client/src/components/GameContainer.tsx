@@ -30,14 +30,17 @@ export const GameContainer = forwardRef<GameContainerHandle, PhaserConfig>(
 
     const gameWidth = typeof width === 'string' ? parseInt(width, 10) : width;
     const gameHeight = typeof height === 'string' ? parseInt(height, 10) : height;
+    // Phaser configuration is fixed for the lifetime of this mounted container.
+    const initialSettings = useRef({ gameWidth, gameHeight, config, onReady, restConfig });
 
     useEffect(() => {
       if (!containerRef.current) return;
+      const settings = initialSettings.current;
 
       const gameConfig: Types.Core.GameConfig = {
         type: Phaser.AUTO,
-        width: gameWidth,
-        height: gameHeight,
+        width: settings.gameWidth,
+        height: settings.gameHeight,
         parent: containerRef.current,
         backgroundColor: '#1a1a2e',
         physics: {
@@ -48,14 +51,14 @@ export const GameContainer = forwardRef<GameContainerHandle, PhaserConfig>(
           mode: Phaser.Scale.FIT,
           autoCenter: Phaser.Scale.CENTER_BOTH,
         },
-        ...restConfig,
-        ...config,
+        ...settings.restConfig,
+        ...settings.config,
       };
 
       gameRef.current = new Game(gameConfig);
 
       // Call onReady callback
-      onReady?.();
+      settings.onReady?.();
 
       return () => {
         if (gameRef.current) {
@@ -63,7 +66,7 @@ export const GameContainer = forwardRef<GameContainerHandle, PhaserConfig>(
           gameRef.current = null;
         }
       };
-    }, [gameWidth, gameHeight, config, restConfig, onReady]);
+    }, []);
 
     useImperativeHandle(ref, () => ({
       getGame: () => gameRef.current,

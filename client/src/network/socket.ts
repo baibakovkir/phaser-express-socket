@@ -1,4 +1,5 @@
 import { io, Socket } from "socket.io-client";
+import type { GameInput, MatchFound } from '@moba/shared';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
 
@@ -46,11 +47,7 @@ export interface Lobby {
   isPrivate: boolean;
 }
 
-export interface MatchFoundData {
-  matchId: string;
-  team1: { playerId: string; username: string; mmr: number }[];
-  team2: { playerId: string; username: string; mmr: number }[];
-}
+export type MatchFoundData = MatchFound;
 
 class NetworkManager {
   private socket: Socket;
@@ -103,9 +100,9 @@ class NetworkManager {
   }
 
   private authenticateSocket(token: string, callback?: (success: boolean) => void) {
-    this.socket.emit("auth", { token }, (response: { success: boolean; error?: string; player?: Player }) => {
+    this.socket.emit("auth", { token }, (response: { success: boolean; error?: string; player?: Player & { playerId?: string } }) => {
       if (response.success && response.player) {
-        this.player = response.player;
+        this.player = { ...response.player, id: response.player.playerId || response.player.id };
         console.log("[network] socket authenticated as", response.player.username);
         callback?.(true);
       } else {
@@ -140,6 +137,14 @@ class NetworkManager {
         resolve(response);
       });
     });
+  }
+
+  startLobby(): Promise<{ success: boolean; error?: string }> {
+    return new Promise(resolve => this.socket.emit('lobby:start', resolve));
+  }
+
+  selectHero(matchId: string, heroId: string): Promise<{ success: boolean; error?: string }> {
+    return new Promise(resolve => this.socket.emit('match:select-hero', { matchId, heroId }, resolve));
   }
 
   setReady(ready: boolean): Promise<{ success: boolean; error?: string }> {
@@ -188,8 +193,8 @@ class NetworkManager {
   }
 
   // Game state sync
-  sendInput(matchId: string, input: unknown, tick: number) {
-    this.socket.emit("game:input", { matchId, input, tick });
+  sendInput(matchId: string, input: GameInput) {
+    this.socket.emit("game:input", { matchId, input });
   }
 
   // Event listeners

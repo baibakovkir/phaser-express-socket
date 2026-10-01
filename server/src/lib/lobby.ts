@@ -59,6 +59,10 @@ class LobbyManager {
       return { success: false, error: "Lobby not found" };
     }
 
+    if (this.playerLobbies.has(player.playerId)) {
+      return { success: false, error: "Already in a lobby" };
+    }
+
     if (lobby.players.length >= 6) {
       return { success: false, error: "Lobby is full" };
     }
@@ -126,7 +130,7 @@ class LobbyManager {
     return { success: true };
   }
 
-  kickPlayer(kickerId: string, targetId: string): { success: boolean; error?: string } {
+  kickPlayer(kickerId: string, targetId: string): { success: boolean; error?: string; socketId?: string } {
     const lobbyId = this.playerLobbies.get(kickerId);
     if (!lobbyId) {
       return { success: false, error: "Kicker not in any lobby" };
@@ -149,7 +153,7 @@ class LobbyManager {
     lobby.players = lobby.players.filter((p) => p.playerId !== targetId);
     this.playerLobbies.delete(targetId);
 
-    return { success: true };
+    return { success: true, socketId: targetPlayer.socketId };
   }
 
   deleteLobby(lobbyId: string): void {

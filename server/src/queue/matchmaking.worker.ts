@@ -1,6 +1,6 @@
 import { Worker, Job } from "bullmq";
 import { redis } from "../lib/redis.js";
-import { getIO } from "../socket.js";
+import { matchManager } from '../match/manager.js';
 import type { MatchmakingJobData } from "./matchmaking.queue.js";
 
 const TEAM_SIZE = 3;
@@ -12,6 +12,12 @@ interface QueuedPlayer extends MatchmakingJobData {
 }
 
 const waitingPlayers: QueuedPlayer[] = [];
+let formingMatch = false;
+
+export function removeQueuedPlayer(playerId: string): void {
+  const index = waitingPlayers.findIndex(player => player.playerId === playerId);
+  if (index !== -1) waitingPlayers.splice(index, 1);
+}
 
 export function initMatchmakingWorker() {
   const worker = new Worker<MatchmakingJobData>(
@@ -49,7 +55,7 @@ export function initMatchmakingWorker() {
 }
 
 function tryFormMatch() {
-  if (waitingPlayers.length < MATCH_SIZE) return;
+  if (formingMatch || waitingPlayers.length < MATCH_SIZE) return;
 
   // Sort by MMR for better matching
   waitingPlayers.sort((a, b) => a.mmr - b.mmr);
@@ -71,7 +77,8 @@ function tryFormMatch() {
   }
 
   if (matchCandidates.length === MATCH_SIZE) {
-    formMatch(matchCandidates);
+    formingMatch = true;
+    void formMatch(matchCandidates).finally(() => { formingMatch = false; });
   } else {
     // Increase attempt counter for all waiting players
     for (const player of waitingPlayers) {
@@ -80,31 +87,28 @@ function tryFormMatch() {
   }
 }
 
-function formMatch(players: QueuedPlayer[]) {
-  const matchId = `match-${Date.now()}`;
-  const io = getIO();
+async function formMatch(players: QueuedPlayer[]) {
 
   // Split into two teams based on MMR (balanced)
   const sorted = [...players].sort((a, b) => a.mmr - b.mmr);
   const team1 = [sorted[0], sorted[3], sorted[4]]; // Lower MMR + mid
   const team2 = [sorted[1], sorted[2], sorted[5]]; // Higher MMR + mid
 
-  // Join rooms and notify players
-  for (const p of players) {
-    const socket = io.sockets.sockets.get(p.socketId);
-    if (socket) {
-      socket.join(matchId);
-      // Remove from queue
-      socket.emit("queue:left");
-    }
+  const balanced = team1.flatMap((p, i) => [p, team2[i]]);
+  let result;
+  try {
+    result = await matchManager.create(
+      balanced.map(p => ({ playerId: p.playerId, username: p.username, socketId: p.socketId })),
+      () => players.every(player => waitingPlayers.some(waiting => waiting.playerId === player.playerId && waiting.socketId === player.socketId)),
+    );
+  } catch (error) {
+    console.error('[matchmaking] match creation failed:', error);
+    return;
   }
-
-  // Notify all players in the match
-  io.to(matchId).emit("match:found", {
-    matchId,
-    team1: team1.map((p) => ({ playerId: p.playerId, username: p.username, mmr: p.mmr })),
-    team2: team2.map((p) => ({ playerId: p.playerId, username: p.username, mmr: p.mmr })),
-  });
+  if (!result.success) {
+    console.error('[matchmaking] match creation failed:', result.error);
+    return;
+  }
 
   // Remove matched players from queue
   const matchedIds = new Set(players.map((p) => p.playerId));
@@ -112,5 +116,5 @@ function formMatch(players: QueuedPlayer[]) {
   waitingPlayers.length = 0;
   waitingPlayers.push(...remainingPlayers);
 
-  console.log(`[matchmaking] match created: ${matchId} with ${players.length} players`);
+  console.log(`[matchmaking] match created: ${result.matchId} with ${players.length} players`);
 }

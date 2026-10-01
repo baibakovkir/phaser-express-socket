@@ -3014,9 +3014,6 @@ export class GameScenePhase3 extends Phaser.Scene {
 
     stateSync.queueInput(input);
 
-    if (!this.isTestMode) {
-      network.sendInput(this.matchId, input, stateSync.getTick());
-    }
   }
 
   private updateStatsUI() {
