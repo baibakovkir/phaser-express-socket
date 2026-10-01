@@ -10,10 +10,12 @@ if ! command -v nginx >/dev/null 2>&1 || ! command -v certbot >/dev/null 2>&1; t
   exit 1
 fi
 
-install -m 644 "$deploy_dir/nginx-site.conf" "$site_conf"
-ln -sfn "$site_conf" "$site_link"
-nginx -t
-systemctl reload nginx
+if [ ! -e "$site_link" ]; then
+  install -m 644 "$deploy_dir/nginx-site.conf" "$site_conf"
+  ln -s "$site_conf" "$site_link"
+  nginx -t
+  systemctl reload nginx
+fi
 
 if [ ! -s /etc/letsencrypt/live/ninjas.baibakovkir.space/fullchain.pem ]; then
   certbot --nginx --non-interactive --agree-tos --register-unsafely-without-email --redirect -d ninjas.baibakovkir.space
