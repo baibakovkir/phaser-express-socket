@@ -126,7 +126,7 @@ jobs:
           port="${VM_PORT:-22}"
           remote_dir="/tmp/ninjas-deploy-${GITHUB_RUN_ID}"
           ssh -i ~/.ssh/id_deploy -p "$port" "$VM_USER@$VM_HOST" "mkdir -p '$remote_dir'"
-          scp -i ~/.ssh/id_deploy -P "$port" compose.prod.yml ops/nginx-site.conf ops/bootstrap-host.sh ops/deploy.sh ops/init-env.sh "$VM_USER@$VM_HOST:$remote_dir/"
+          scp -i ~/.ssh/id_deploy -P "$port" compose.prod.yml ops/nginx-site.conf ops/nginx-bootstrap.conf ops/bootstrap-host.sh ops/deploy.sh ops/init-env.sh "$VM_USER@$VM_HOST:$remote_dir/"
           ssh -i ~/.ssh/id_deploy -p "$port" "$VM_USER@$VM_HOST" "sudo install -d -m 750 /opt/ninjas-x && sudo chown '$VM_USER' /opt/ninjas-x && cp '$remote_dir/'* /opt/ninjas-x/ && chmod 750 /opt/ninjas-x/bootstrap-host.sh /opt/ninjas-x/deploy.sh /opt/ninjas-x/init-env.sh && rm -rf '$remote_dir' && /opt/ninjas-x/init-env.sh"
       - name: Set up HTTPS routing
         env:
