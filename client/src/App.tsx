@@ -16,7 +16,6 @@ const App: React.FC = () => {
   const [phase, setPhase] = useState<GamePhase>('menu');
   const [matchId, setMatchId] = useState<string>('');
   const [team, setTeam] = useState<'blue' | 'red'>('blue');
-  const [selectedHero, setSelectedHero] = useState<string>('');
 
   const startGame = useGameStore((state) => state.startGame);
 
@@ -27,7 +26,7 @@ const App: React.FC = () => {
     setPhase('heroSelect');
   }, []);
 
-  const handleHeroComplete = useCallback(() => {
+  const handleHeroComplete = useCallback((selectedHero: string) => {
     console.log('[App] Hero locked, starting game scene...');
     
     const game = gameRef.current?.getGame();
@@ -53,12 +52,7 @@ const App: React.FC = () => {
     } else {
       console.error('[App] ERROR: No Phaser game instance!');
     }
-  }, [matchId, selectedHero, team, startGame]);
-
-  // Listen for hero selection
-  EventBus.on('champion:selected', (data) => {
-    setSelectedHero(data.championId);
-  });
+  }, [matchId, team, startGame]);
 
   return (
     <div className="relative w-full h-full overflow-hidden bg-gray-900">

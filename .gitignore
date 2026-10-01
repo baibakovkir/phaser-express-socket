@@ -9,3 +9,5 @@ web/.env
 *.log
 .DS_Store
 .turbo/
+playwright-report/
+test-results/

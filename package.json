@@ -2,6 +2,9 @@
   "name": "phaser-express-socket-moba",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "^22.0.0"
+  },
   "workspaces": [
     "server",
     "client",
@@ -14,13 +17,16 @@
     "dev:web": "npm run dev -w web",
     "build": "npm run build -w server && npm run build -w client && npm run build -w web",
     "db:migrate": "npm run db:migrate -w server",
+    "db:deploy": "npm run db:deploy -w server",
     "db:generate": "npm run db:generate -w server",
     "db:seed": "npm run db:seed -w server",
     "db:studio": "npm run db:studio -w server",
     "docker:up": "docker compose up -d",
-    "docker:down": "docker compose down"
+    "docker:down": "docker compose down",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "concurrently": "^9.1.2",
     "typescript": "^5.7.3"
   }

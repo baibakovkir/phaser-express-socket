@@ -34,7 +34,7 @@ export interface Ability {
 interface HeroSelectProps {
   matchId: string;
   team: 'blue' | 'red';
-  onComplete?: () => void;
+  onComplete?: (heroId: string) => void;
 }
 
 const ROLES = ['tank', 'assassin', 'mage', 'support', 'marksman', 'fighter'] as const;
@@ -109,7 +109,7 @@ export const HeroSelect: React.FC<HeroSelectProps> = ({ matchId, team, onComplet
 
     setTimeout(() => {
       console.log('[HeroSelect] Calling onComplete');
-      onComplete?.();
+      onComplete?.(selectedHero.id);
     }, 1500);
   }, [selectedHero, matchId, team, onComplete]);
 

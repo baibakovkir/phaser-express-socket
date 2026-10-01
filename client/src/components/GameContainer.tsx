@@ -40,6 +40,10 @@ export const GameContainer = forwardRef<GameContainerHandle, PhaserConfig>(
         height: gameHeight,
         parent: containerRef.current,
         backgroundColor: '#1a1a2e',
+        physics: {
+          default: 'arcade',
+          arcade: { debug: false },
+        },
         scale: {
           mode: Phaser.Scale.FIT,
           autoCenter: Phaser.Scale.CENTER_BOTH,
