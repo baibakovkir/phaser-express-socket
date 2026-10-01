@@ -7,6 +7,7 @@ import { prisma } from "./lib/prisma.js";
 import { matchManager } from './match/manager.js';
 import { removeQueuedPlayer } from './queue/matchmaking.worker.js';
 import type { GameInput } from '@moba/shared';
+import { decodeInput } from '@moba/shared/codec';
 
 interface AuthenticatedSocket extends Socket {
   auth?: AuthPayload;
@@ -286,9 +287,14 @@ export function initSocket(httpServer: HttpServer) {
     });
 
     // Game: Input (for state sync)
-    socket.on("game:input", (data: { matchId: string; input: GameInput }) => {
+    socket.on("game:input", (data: { matchId: string; input: Uint8Array }) => {
       if (!socket.auth || !data || typeof data.matchId !== 'string' || !data.input) return;
-      matchManager.input(socket.auth.playerId, socket.id, data.matchId, data.input);
+      try {
+        if (!(data.input instanceof Uint8Array) || data.input.byteLength > 64) return;
+        matchManager.input(socket.auth.playerId, socket.id, data.matchId, decodeInput(data.input) as GameInput);
+      } catch {
+        // Malformed binary input is ignored.
+      }
     });
 
     // Disconnect handling

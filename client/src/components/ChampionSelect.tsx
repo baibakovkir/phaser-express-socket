@@ -59,7 +59,7 @@ export const HeroSelect: React.FC<HeroSelectProps> = ({ matchId, team, onComplet
   useEffect(() => {
     const loadHeroes = async () => {
       try {
-        const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:3000';
+        const serverUrl = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? window.location.origin : 'http://localhost:3000');
         const response = await fetch(`${serverUrl}/heroes`);
         
         if (!response.ok) {
@@ -235,6 +235,13 @@ export const HeroSelect: React.FC<HeroSelectProps> = ({ matchId, team, onComplet
                 <span className="text-blue-400">Mana: {selectedHero.mana}</span>
                 <span className="text-red-400">ATK: {selectedHero.attack}</span>
                 <span className="text-yellow-400">ARM: {selectedHero.armor}</span>
+              </div>
+              <div className="flex flex-wrap gap-2 mt-3 text-xs">
+                {selectedHero.abilities?.map(ability => (
+                  <span key={ability.key} className="px-2 py-1 rounded bg-gray-900 text-gray-200" title={ability.description}>
+                    {ability.key} · {ability.name} · {ability.manaCost} mana · {Math.round(ability.cooldown / 1000)}s
+                  </span>
+                ))}
               </div>
             </div>
 

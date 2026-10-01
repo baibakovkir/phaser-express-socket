@@ -69,3 +69,30 @@ test('server declares the winner after five kills', () => {
   assert.equal(world.snapshot().status, 'finished');
   assert.equal(world.snapshot().winnerTeam, 1);
 });
+
+test('database ability costs mana and obeys cooldown and range', () => {
+  const abilityHero = {
+    id: 'mage', maxHp: 100, maxMana: 100, manaRegen: 0, speed: 300, attack: 10,
+    abilities: [{ key: '1', cooldown: 1000, manaCost: 25, damage: 30, range: 200 }],
+  };
+  const world = new MatchWorld('ability-test', players, [abilityHero]);
+  world.selectHero('blue', 'mage');
+  world.selectHero('red', 'mage');
+  const blue = world.players.get('blue');
+  const red = world.players.get('red');
+  world.setInput('blue', { seq: 1, dx: 0, dy: 0, attack: false, cast: '1' });
+  world.step();
+  assert.equal(red.hp, 100);
+  assert.equal(blue.mana, 100);
+  red.x = blue.x + 100;
+  red.y = blue.y;
+  world.setInput('blue', { seq: 2, dx: 0, dy: 0, attack: false, cast: '1' });
+  world.step();
+  assert.equal(red.hp, 70);
+  assert.equal(blue.mana, 75);
+  world.setInput('blue', { seq: 3, dx: 0, dy: 0, attack: false, cast: '1' });
+  world.step();
+  assert.equal(red.hp, 70);
+  assert.equal(blue.mana, 75);
+  assert.equal(world.snapshot().effects.at(-1).kind, 'nova');
+});

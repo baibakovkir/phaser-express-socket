@@ -18,6 +18,7 @@ const App: React.FC = () => {
   const gameRef = useRef<GameContainerHandle>(null);
   const [phase, setPhase] = useState<GamePhase>('menu');
   const [matchId, setMatchId] = useState<string>('');
+  const [matchData, setMatchData] = useState<MatchFoundData | null>(null);
   const [team, setTeam] = useState<'blue' | 'red'>('blue');
 
   const startGame = useGameStore((state) => state.startGame);
@@ -26,6 +27,7 @@ const App: React.FC = () => {
     const participant = match.participants.find(item => item.playerId === network.getPlayer()?.id);
     if (!participant) return;
     setMatchId(match.matchId);
+    setMatchData(match);
     setTeam(participant.team === 1 ? 'blue' : 'red');
     setPhase('heroSelect');
   }, []);
@@ -46,15 +48,15 @@ const App: React.FC = () => {
       
       game.scene.start('NetworkGameScene', {
         matchId,
-        championId: selectedHero,
-        team: team === 'blue' ? 0 : 1,
+        participants: matchData?.participants,
+        heroes: matchData?.heroes,
       });
       
       startGame();
       EventBus.emit('game:started');
       setPhase('playing');
     } else throw new Error('Phaser game is unavailable');
-  }, [matchId, team, startGame]);
+  }, [matchId, matchData, startGame]);
 
   return (
     <div className="relative w-full h-full overflow-hidden bg-gray-900">

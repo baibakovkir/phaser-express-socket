@@ -20,7 +20,7 @@ export default function ChampionsSection() {
   useEffect(() => {
     const fetchHeroes = async () => {
       try {
-        const response = await fetch('http://localhost:3000/heroes');
+        const response = await fetch('/heroes');
         if (!response.ok) throw new Error('Failed to fetch');
         const data = await response.json();
         setHeroes(data.heroes);

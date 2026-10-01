@@ -1,13 +1,14 @@
 import { io, Socket } from "socket.io-client";
 import type { GameInput, MatchFound } from '@moba/shared';
+import { encodeInput } from '@moba/shared/codec';
 
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? window.location.origin : "http://localhost:3000");
 
 // Get token from URL params (passed by web app) or localStorage
 function getStoredToken(): string | null {
   try {
     // First, check URL parameters (passed from web app)
-    const urlParams = new URLSearchParams(window.location.search);
+    const urlParams = new URLSearchParams(window.location.hash.slice(1));
     const tokenFromUrl = urlParams.get('token');
     if (tokenFromUrl) {
       // Store in localStorage for future use
@@ -194,7 +195,7 @@ class NetworkManager {
 
   // Game state sync
   sendInput(matchId: string, input: GameInput) {
-    this.socket.emit("game:input", { matchId, input });
+    this.socket.emit("game:input", { matchId, input: encodeInput(input) });
   }
 
   // Event listeners

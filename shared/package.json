@@ -2,5 +2,22 @@
   "name": "@moba/shared",
   "version": "0.1.0",
   "private": true,
-  "types": "index.d.ts"
+  "type": "module",
+  "types": "index.d.ts",
+  "exports": {
+    ".": "./index.d.ts",
+    "./codec": {
+      "types": "./codec.d.ts",
+      "default": "./codec.js"
+    }
+  },
+  "scripts": {
+    "generate": "pbjs -t static-module -w es6 -o generated/protocol.js protocol.proto && node scripts/fix-generated-import.mjs"
+  },
+  "dependencies": {
+    "protobufjs": "^7.5.4"
+  },
+  "devDependencies": {
+    "protobufjs-cli": "^1.1.3"
+  }
 }

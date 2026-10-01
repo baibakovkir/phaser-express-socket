@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Worker } from 'node:worker_threads';
 import type { Server } from 'socket.io';
 import type { GameInput, MatchFound, MatchParticipant, WorldSnapshot } from '@moba/shared';
+import { encodeSnapshot } from '@moba/shared/codec';
 import { prisma } from '../lib/prisma.js';
 import { redis } from '../lib/redis.js';
 import type { HeroStats } from './world.js';
@@ -40,11 +41,27 @@ class MatchManager {
     if (entrants.some(p => this.playerMatches.has(p.playerId) || !this.io?.sockets.sockets.get(p.socketId)?.connected)) {
       return { success: false, error: 'A player is offline or already in a match' };
     }
-    const catalog = await prisma.hero.findMany({ select: { id: true, baseHp: true, baseSpeed: true, baseAttack: true } });
+    const catalog = await prisma.hero.findMany({
+      include: { abilities: true },
+    });
     if (!isValid() || entrants.some(p => this.playerMatches.has(p.playerId) || !this.io?.sockets.sockets.get(p.socketId)?.connected)) {
       return { success: false, error: 'A player left before the match started' };
     }
-    const heroes: HeroStats[] = catalog.map(hero => ({ id: hero.id, maxHp: hero.baseHp, speed: hero.baseSpeed, attack: hero.baseAttack }));
+    const heroes: HeroStats[] = catalog.map(hero => ({
+      id: hero.id,
+      maxHp: hero.baseHp,
+      maxMana: hero.baseMana,
+      manaRegen: hero.manaRegen,
+      speed: hero.baseSpeed,
+      attack: hero.baseAttack,
+      abilities: hero.abilities.filter(ability => ['Q', '1', '2', '3'].includes(ability.key)).map(ability => ({
+        key: ability.key as 'Q' | '1' | '2' | '3',
+        cooldown: ability.cooldown,
+        manaCost: ability.manaCost,
+        damage: ability.damage,
+        range: ability.range,
+      })),
+    }));
     if (!heroes.length) return { success: false, error: 'No heroes available' };
 
     const matchId = randomUUID();
@@ -77,7 +94,7 @@ class MatchManager {
     }
     worker.on('message', (message: { type: 'snapshot'; snapshot: WorldSnapshot }) => {
       if (message.type !== 'snapshot') return;
-      this.io?.to(matchId).emit('game:snapshot', message.snapshot);
+      this.io?.to(matchId).emit('game:snapshot', encodeSnapshot(message.snapshot, participants.map(item => item.playerId)));
       if (message.snapshot.tick > 0 && message.snapshot.tick % 30 === 0) {
         void redis.set(`match:${matchId}:snapshot`, JSON.stringify(message.snapshot), 'EX', 3600).catch(error => console.error('[match] Redis checkpoint failed', error));
       }
@@ -100,7 +117,15 @@ class MatchManager {
       }
       this.close(matchId);
     });
-    const notice: MatchFound = { matchId, participants };
+    const colors: Record<string, number> = {
+      TANK: 0x4488ff, ASSASSIN: 0x00ff88, MAGE: 0xaa44ff,
+      SUPPORT: 0x00ffaa, MARKSMAN: 0xff8800, FIGHTER: 0xff4444,
+    };
+    const notice: MatchFound = {
+      matchId,
+      participants,
+      heroes: catalog.map(hero => ({ id: hero.id, name: hero.name, role: hero.role.toLowerCase(), color: colors[hero.role] || 0xffffff })),
+    };
     this.io.to(matchId).emit('match:found', notice);
     return { success: true, matchId };
   }
@@ -119,7 +144,8 @@ class MatchManager {
     if (!match || match.finished || match.roster.get(playerId) !== socketId) return;
     if (!input || !Number.isSafeInteger(input.seq) || input.seq < 1 ||
         !Number.isFinite(input.dx) || !Number.isFinite(input.dy) ||
-        Math.abs(input.dx) > 1 || Math.abs(input.dy) > 1 || typeof input.attack !== 'boolean') return;
+        Math.abs(input.dx) > 1 || Math.abs(input.dy) > 1 || typeof input.attack !== 'boolean' ||
+        (input.cast !== undefined && !['Q', '1', '2', '3'].includes(input.cast))) return;
     const now = Date.now();
     const budget = match.inputBudget.get(playerId);
     if (!budget || now - budget.window >= 1000) match.inputBudget.set(playerId, { window: now, count: 1 });

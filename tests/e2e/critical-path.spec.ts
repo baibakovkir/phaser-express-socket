@@ -46,6 +46,10 @@ test('registration launches a playable client scene', async ({ page }) => {
   await page.keyboard.down('d');
   await expect.poll(async () => Number(await canvas.getAttribute('data-server-x'))).toBeGreaterThan(initialX + 30);
   await page.keyboard.up('d');
+  const beforeDash = Number(await canvas.getAttribute('data-server-x'));
+  await page.keyboard.press('q');
+  await expect.poll(async () => Number(await canvas.getAttribute('data-server-x'))).toBeGreaterThan(beforeDash + 150);
+  await expect.poll(async () => Number(await canvas.getAttribute('data-server-mana'))).toBeLessThan(100);
   expect(errors).toEqual([]);
 });
 
@@ -67,7 +71,7 @@ test('two players receive the same server match', async ({ browser }) => {
     await host.getByRole('button', { name: 'Create Lobby' }).click();
     await guest.getByRole('button', { name: 'Refresh' }).click();
     await expect(guest.getByText(lobbyName, { exact: false })).toBeVisible();
-    await guest.getByRole('button', { name: 'Join', exact: true }).click();
+    await guest.getByText(lobbyName, { exact: false }).locator('..').getByRole('button', { name: 'Join' }).click();
     await expect(host.getByText('Players (2/6)')).toBeVisible();
     await host.getByRole('button', { name: /START GAME/ }).click();
 
