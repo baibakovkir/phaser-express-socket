@@ -117,10 +117,12 @@ jobs:
           JWT_SECRET: ${{ secrets.NINJAS_JWT_SECRET }}
         run: |
           set -eu
-          test -n "$VM_USER"
-          test -n "$POSTGRES_PASSWORD"
-          test -n "$DATABASE_URL"
-          test -n "$JWT_SECRET"
+          for required in VM_USER POSTGRES_PASSWORD DATABASE_URL JWT_SECRET; do
+            if [ -z "${!required}" ]; then
+              echo "::error::Missing deploy secret: $required"
+              exit 1
+            fi
+          done
           port="${VM_PORT:-22}"
           remote_dir="/tmp/ninjas-deploy-${GITHUB_RUN_ID}"
           ssh -i ~/.ssh/id_deploy -p "$port" "$VM_USER@$VM_HOST" "mkdir -p '$remote_dir'"
