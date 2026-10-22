@@ -14,6 +14,30 @@ async function registerAndOpenGame(page: Page, label: string): Promise<void> {
   await expect(page.getByText(/Logged in as/)).toBeVisible();
 }
 
+test('auth forms show field validation and API errors', async ({ page }) => {
+  await page.goto('/register', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Create Account' }).click();
+  await expect(page.getByText('Choose a username.')).toBeVisible();
+  await expect(page.getByText('Enter your email address.')).toBeVisible();
+  await page.getByLabel('Username').fill('tester');
+  await page.getByLabel('Email').fill('not-an-email');
+  await page.getByLabel('Password', { exact: true }).fill('short');
+  await page.getByLabel('Confirm Password').fill('different');
+  await page.getByRole('button', { name: 'Create Account' }).click();
+  await expect(page.getByText('Enter a valid email address.')).toBeVisible();
+  await expect(page.getByText('Use at least 6 characters.')).toBeVisible();
+  await expect(page.getByText('Passwords do not match.')).toBeVisible();
+
+  await page.goto('/login', { waitUntil: 'domcontentloaded' });
+  await page.getByLabel('Email').fill('nobody@example.test');
+  await page.getByLabel('Password').fill('wrong-password');
+  await page.getByRole('button', { name: 'Login', exact: true }).click();
+  const toast = page.getByRole('alert');
+  await expect(toast).toContainText('Invalid credentials');
+  await toast.getByRole('button', { name: 'Dismiss error' }).click();
+  await expect(toast).toHaveCount(0);
+});
+
 test('registration launches a playable client scene', async ({ page }) => {
   test.setTimeout(90_000);
   const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

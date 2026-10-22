@@ -16,15 +16,11 @@ deployed=true
 docker compose --env-file .env --env-file "$release_file" -f compose.prod.yml up -d --remove-orphans || deployed=false
 attempt=0
 while [ "$deployed" = true ] && [ "$attempt" -lt 18 ]; do
-  if curl --fail --silent --show-error http://127.0.0.1:13002/health >/dev/null; then break; fi
+  if curl --fail --silent --show-error --max-time 3 http://127.0.0.1:13002/health >/dev/null; then break; fi
   attempt=$((attempt + 1))
   sleep 5
 done
 if [ "$attempt" -ge 18 ]; then deployed=false; fi
-if [ "$deployed" = true ] && ! curl --fail --silent --show-error --location --max-redirs 5 --max-time 15 https://ninjas.baibakovkir.space/health >/dev/null; then
-  deployed=false
-fi
-
 if [ "$deployed" != true ]; then
   if [ -f "$previous_file" ]; then
     cp "$previous_file" "$release_file"

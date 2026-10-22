@@ -84,6 +84,46 @@
   border-color: #00ff88;
 }
 
+.form-group input[aria-invalid='true'] {
+  border-color: #ff7777;
+}
+
+.field-error {
+  margin: 6px 0 0;
+  color: #ff9d9d;
+  font-size: 13px;
+}
+
+.auth-toast {
+  position: fixed;
+  z-index: 100;
+  top: max(16px, env(safe-area-inset-top));
+  right: 16px;
+  left: 16px;
+  max-width: 420px;
+  margin-left: auto;
+  padding: 14px 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  color: #fff;
+  background: #571f2a;
+  border: 1px solid #ff7777;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.auth-toast button {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+
 .form-group input::placeholder {
   color: #666;
 }
@@ -109,6 +149,12 @@
 
 .btn-primary:active {
   transform: translateY(0);
+}
+
+.btn-primary:disabled {
+  opacity: 0.65;
+  cursor: wait;
+  transform: none;
 }
 
 .auth-switch {

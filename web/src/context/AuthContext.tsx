@@ -42,18 +42,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const handleLogin = async (email: string, password: string) => {
     setError(null);
-    const data = await login(email, password);
-    setToken(data.token);
-    setPlayer(data.player);
-    localStorage.setItem('auth_token', data.token);
+    try {
+      const data = await login(email, password);
+      setToken(data.token);
+      setPlayer(data.player);
+      localStorage.setItem('auth_token', data.token);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not sign in. Try again.');
+      throw cause;
+    }
   };
 
   const handleRegister = async (username: string, email: string, password: string) => {
     setError(null);
-    const data = await register(username, email, password);
-    setToken(data.token);
-    setPlayer(data.player);
-    localStorage.setItem('auth_token', data.token);
+    try {
+      const data = await register(username, email, password);
+      setToken(data.token);
+      setPlayer(data.player);
+      localStorage.setItem('auth_token', data.token);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not create account. Try again.');
+      throw cause;
+    }
   };
 
   const handleLogout = () => {

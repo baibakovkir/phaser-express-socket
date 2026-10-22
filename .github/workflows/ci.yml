@@ -150,3 +150,7 @@ jobs:
           docker_config="/tmp/ninjas-ghcr-${GITHUB_RUN_ID}"
           printf '%s' "$GHCR_TOKEN" | ssh -i ~/.ssh/id_deploy -p "$port" "$VM_USER@$VM_HOST" "mkdir -p '$docker_config' && DOCKER_CONFIG='$docker_config' docker login ghcr.io --username '${GITHUB_ACTOR}' --password-stdin"
           ssh -i ~/.ssh/id_deploy -p "$port" "$VM_USER@$VM_HOST" "cd /opt/ninjas-x && IMAGE_REPOSITORY='${IMAGE_REPOSITORY,,}' IMAGE_TAG='$IMAGE_TAG' DOCKER_CONFIG='$docker_config' ./deploy.sh; result=\$?; rm -rf '$docker_config'; exit \$result"
+      - name: Verify public HTTPS from runner
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --retry 6 --retry-delay 5 --retry-all-errors --max-time 20 https://ninjas.baibakovkir.space/health | grep -q '"status":"ok"'
