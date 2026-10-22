@@ -1,9 +1,9 @@
 import Phaser from 'phaser';
 import type { GameInput, MatchFound, WorldEffect, WorldPlayer, WorldSnapshot, WorldUnit } from '@moba/shared';
 import { decodeSnapshot } from '@moba/shared/codec';
-import { BOSS, BOSS_SPAWN_TICKS, CAMPS, JUNGLE_SPAWN_TICKS, LANES, LANE_WAVE_TICKS, MAP_HEIGHT, MAP_WIDTH, SHRINES, TICKS_PER_SECOND, nextSpawnSecond } from '@moba/shared/map';
+import { BASES, BOSS, BOSS_SPAWN_TICKS, CAMPS, JUNGLE_SPAWN_TICKS, LANES, LANE_WAVE_TICKS, MAP_HEIGHT, MAP_WIDTH, SHRINES, TICKS_PER_SECOND, nextSpawnSecond } from '@moba/shared/map';
 import { network } from '../network/socket';
-import { mobileInput, resetMobileInput, takeMobileCast } from '../input/mobileInput';
+import { mobileInput, queueMobileCast, resetMobileInput, takeMobileCast } from '../input/mobileInput';
 import { EFFECT_SPRITES, HERO_SPRITES, spriteUrl } from '../assets/heroSprites';
 import { EventBus } from '../events/EventBus';
 
@@ -23,13 +23,13 @@ export class NetworkGameScene extends Phaser.Scene {
   private playerSprites = new Map<string, Phaser.GameObjects.Image>();
   private unitSprites = new Map<number, Phaser.GameObjects.Image>();
   private effectImages = new Map<number, Phaser.GameObjects.Image>();
+  private coinLabels = new Map<number, Phaser.GameObjects.Text>();
   private lastRenderPositions = new Map<string, { x: number; y: number }>();
   private cameraReady = false;
   private snapshots: WorldSnapshot[] = [];
   private receivedAt = 0;
   private sequence = 0;
   private pending: GameInput[] = [];
-  private pendingCast?: GameInput['cast'];
   private selectedUnitId?: number;
   private localPosition?: { x: number; y: number };
   private readonly onSnapshot = (data: unknown) => this.receiveSnapshot(data);
@@ -38,8 +38,10 @@ export class NetworkGameScene extends Phaser.Scene {
   private readonly onPointerDown = (pointer: Phaser.Input.Pointer) => this.selectUnitAt(pointer.worldX, pointer.worldY);
   private readonly onKeyDown = (event: KeyboardEvent) => {
     const key = event.key.toUpperCase();
-    if (!event.repeat && ['Q', '1', '2', '3'].includes(key) && !this.pendingCast) {
-      this.pendingCast = key as GameInput['cast'];
+    if (!event.repeat && ['Q', '1', '2', '3'].includes(key) &&
+      !(event.target instanceof HTMLInputElement) && !(event.target instanceof HTMLTextAreaElement)) {
+      queueMobileCast(key as NonNullable<GameInput['cast']>);
+      event.preventDefault();
     }
   };
 
@@ -60,7 +62,6 @@ export class NetworkGameScene extends Phaser.Scene {
     this.playerId = network.getPlayer()?.id || '';
     this.snapshots = [];
     this.pending = [];
-    this.pendingCast = undefined;
     this.selectedUnitId = undefined;
     this.localPosition = undefined;
     this.sequence = 0;
@@ -79,7 +80,7 @@ export class NetworkGameScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, MAP_WIDTH, MAP_HEIGHT);
     this.cameras.main.setZoom(navigator.maxTouchPoints > 0 ? 1.5 : 1);
     this.keys = this.input.keyboard!.addKeys('W,A,S,D,SPACE') as Keys;
-    this.input.keyboard!.on('keydown', this.onKeyDown);
+    window.addEventListener('keydown', this.onKeyDown);
     this.input.on('pointerdown', this.onPointerDown);
     EventBus.on('ui:cycle-target', this.onCycleTarget);
     network.on('game:snapshot', this.onSnapshot);
@@ -87,7 +88,7 @@ export class NetworkGameScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       network.off('game:snapshot', this.onSnapshot);
       network.off('match:aborted', this.onAbort);
-      this.input.keyboard?.off('keydown', this.onKeyDown);
+      window.removeEventListener('keydown', this.onKeyDown);
       this.input.off('pointerdown', this.onPointerDown);
       EventBus.off('ui:cycle-target', this.onCycleTarget);
       resetMobileInput();
@@ -99,6 +100,8 @@ export class NetworkGameScene extends Phaser.Scene {
       this.unitSprites.clear();
       for (const image of this.effectImages.values()) image.destroy();
       this.effectImages.clear();
+      for (const label of this.coinLabels.values()) label.destroy();
+      this.coinLabels.clear();
       this.lastRenderPositions.clear();
       delete this.game.canvas.dataset.gameReady;
       delete this.game.canvas.dataset.serverX;
@@ -161,7 +164,7 @@ export class NetworkGameScene extends Phaser.Scene {
     const boss = snapshot.tick < BOSS_SPAWN_TICKS ? '02:00' : snapshot.units.some(unit => unit.kind === 'boss') ? 'alive' : 'respawning';
     EventBus.emit('game:clock', snapshot.tick, snapshot.units.some(unit => unit.kind === 'boss'));
     this.statusText.setText(snapshot.status === 'finished'
-      ? `Team ${snapshot.winnerTeam} wins · refresh to play again`
+      ? snapshot.winnerTeam ? `Team ${snapshot.winnerTeam} wins · refresh to play again` : 'Draw · 30:00 · refresh to play again'
       : snapshot.status === 'selecting'
         ? 'Waiting for hero selections...'
         : `${clock}  ·  Lane ${lane}s  ·  Jungle ${jungle}s  ·  Oni ${boss}\nWASD move · Space attack · Q / 1 / 2 / 3 abilities`);
@@ -169,8 +172,7 @@ export class NetworkGameScene extends Phaser.Scene {
 
   private sendInput(): void {
     if (this.snapshots.at(-1)?.status !== 'playing') return;
-    const cast = this.pendingCast || takeMobileCast();
-    this.pendingCast = undefined;
+    const cast = takeMobileCast();
     const input: GameInput = {
       seq: ++this.sequence,
       dx: Phaser.Math.Clamp(Number(this.keys.D.isDown) - Number(this.keys.A.isDown) + mobileInput.dx, -1, 1),
@@ -327,6 +329,21 @@ export class NetworkGameScene extends Phaser.Scene {
     ground.fillStyle(0x5b483e).fillCircle(BOSS.x, BOSS.y, 119);
     ground.lineStyle(7, 0xc26a5f).strokeCircle(BOSS.x, BOSS.y, 112);
     this.drawTorii(BOSS.x, BOSS.y - 130, 1.15);
+    for (const team of [1, 2] as const) {
+      const base = BASES[team];
+      const x = base.x + (team === 1 ? -75 : 75);
+      const y = base.y + (team === 1 ? 65 : -65);
+      const color = team === 1 ? 0x76d8ef : 0xffa5a5;
+      ground.fillStyle(color, 0.12).fillCircle(x, y, 145);
+      ground.lineStyle(4, color, 0.7).strokeCircle(x, y, 145);
+      ground.lineStyle(4, 0xffd27d, 0.8).strokeCircle(x, y, 180);
+      for (let i = 0; i < 8; i++) {
+        const angle = i * Math.PI / 4;
+        ground.fillStyle(0xffd27d).fillCircle(x + Math.cos(angle) * 180, y + Math.sin(angle) * 180, 5);
+      }
+      this.add.text(x, y - 115, 'HEAL', { fontSize: '18px', color: '#c7fff1', backgroundColor: '#153e39cc', padding: { x: 5, y: 2 } }).setOrigin(0.5).setDepth(-0.5);
+      this.add.text(x, y + 130, 'SHOP', { fontSize: '18px', color: '#ffe2a1', backgroundColor: '#46351fcc', padding: { x: 5, y: 2 } }).setOrigin(0.5).setDepth(-0.5);
+    }
     this.add.text(1570, 190, 'COMMON JUNGLE', { fontSize: '27px', color: '#e4d8ae' }).setOrigin(0.5).setDepth(-0.5);
     this.add.text(1600, 960, 'MID', { fontSize: '24px', color: '#4d514c' }).setOrigin(0.5).setDepth(-0.5);
     this.add.text(1600, 1700, 'BOTTOM', { fontSize: '24px', color: '#4d514c' }).setOrigin(0.5).setDepth(-0.5);
@@ -368,7 +385,14 @@ export class NetworkGameScene extends Phaser.Scene {
     } else if (unit.kind === 'throne') {
       this.graphics.fillStyle(teamColor).fillCircle(x, y, radius + 14);
       this.graphics.fillStyle(0xf8e2a0).fillTriangle(x - 20, y - 22, x + 20, y - 22, x, y - 58);
-    } else if (unit.kind === 'fountain' || unit.kind === 'shrine') {
+    } else if (unit.kind === 'fountain') {
+      this.graphics.fillStyle(0x293e42).fillCircle(x, y + 6, 43);
+      this.graphics.lineStyle(6, 0xe6c989).strokeCircle(x, y + 5, 40);
+      this.graphics.fillStyle(teamColor, 0.85).fillCircle(x, y + 5, 32);
+      this.graphics.fillStyle(0xd5fff6, 0.85).fillTriangle(x, y - 42, x - 11, y + 5, x + 11, y + 5);
+      this.graphics.lineStyle(4, 0xffce73).lineBetween(x - 48, y - 35, x - 48, y + 2);
+      this.graphics.fillStyle(0xffd473).fillCircle(x - 48, y - 32, 7);
+    } else if (unit.kind === 'shrine') {
       this.graphics.lineStyle(6, teamColor).strokeCircle(x, y, radius + 10);
       this.graphics.fillStyle(teamColor, 0.6).fillCircle(x, y, radius);
     } else {
@@ -442,8 +466,21 @@ export class NetworkGameScene extends Phaser.Scene {
   private drawEffects(effects: WorldEffect[], renderTick: number): void {
     const active = new Set<number>();
     for (const effect of effects) {
-      const progress = Math.max(0, renderTick - effect.tick) / 18;
+      const progress = Math.max(0, renderTick - effect.tick) / (effect.kind === 'gold' ? 30 : 18);
       if (progress > 1) continue;
+      if (effect.kind === 'gold') {
+        if (effect.casterId !== this.playerId) continue;
+        active.add(effect.id);
+        this.graphics.fillStyle(0xeab940, 1 - progress).fillCircle(effect.x, effect.y - progress * 34, 13);
+        this.graphics.lineStyle(3, 0xffed9b, 1 - progress).strokeCircle(effect.x, effect.y - progress * 34, 13);
+        let label = this.coinLabels.get(effect.id);
+        if (!label) {
+          label = this.add.text(effect.x, effect.y - 28, `+${effect.amount ?? 0}`, { fontSize: '19px', color: '#ffe79c', stroke: '#553d18', strokeThickness: 4 }).setOrigin(0.5).setDepth(5);
+          this.coinLabels.set(effect.id, label);
+        }
+        label.setPosition(effect.x, effect.y - 30 - progress * 40).setAlpha(1 - progress);
+        continue;
+      }
       active.add(effect.id);
       this.drawEffectShape(effect, progress);
       const caster = this.snapshots.at(-1)?.players.find(player => player.id === effect.casterId);
@@ -454,7 +491,7 @@ export class NetworkGameScene extends Phaser.Scene {
         ? caster?.heroId === 'marksman' || sourceUnit?.kind === 'creep' ? 'arrow'
           : rangedAttack || sourceUnit?.kind === 'tower' ? 'spark' : 'slash'
         : effect.kind === 'meteor' || effect.kind === 'execute' ? 'flame'
-          : effect.kind === 'heal' || effect.kind === 'revive' ? 'heal'
+          : effect.kind === 'heal' || effect.kind === 'revive' || effect.kind === 'lifesteal' || effect.kind === 'item-heal' ? 'heal'
             : effect.kind === 'strike' ? 'slash' : 'spark';
       const key = `arena-${asset}`;
       if (!this.textures.exists(key)) continue;
@@ -471,8 +508,11 @@ export class NetworkGameScene extends Phaser.Scene {
       image.setScale((effect.kind === 'meteor' ? 3.2 : 2.3) * (1 + progress * 0.5));
       image.setAlpha(1 - progress);
       image.setTint(effect.kind === 'nova' ? 0x8dcfff : effect.kind === 'shield' ? 0x86eaff
-        : effect.kind === 'heal' || effect.kind === 'revive' ? 0x8cff9c : 0xffffff);
+        : effect.kind === 'heal' || effect.kind === 'revive' || effect.kind === 'lifesteal' || effect.kind === 'item-heal' ? 0x8cff9c : 0xffffff);
       image.setRotation(origin ? Math.atan2(effect.y - origin.y, effect.x - origin.x) + Math.PI / 2 : progress * 2);
+    }
+    for (const [id, label] of this.coinLabels) {
+      if (!active.has(id)) { label.destroy(); this.coinLabels.delete(id); }
     }
     for (const [id, image] of this.effectImages) {
       if (!active.has(id)) {
@@ -504,6 +544,8 @@ export class NetworkGameScene extends Phaser.Scene {
         g.fillStyle(0x7adfff, fade * 0.18).fillCircle(x, y, 33 + progress * 38);
         break;
       case 'heal':
+      case 'lifesteal':
+      case 'item-heal':
       case 'revive': {
         const size = effect.kind === 'revive' ? 115 : 75;
         g.fillStyle(0x72f59b, fade * 0.75).fillRect(x - 7, y - size / 2, 14, size);

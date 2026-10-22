@@ -72,17 +72,17 @@ test('active items have server cooldowns and temporary shields', () => {
   const blue = world.players.get('blue');
   blue.gold = 1150;
   assert.equal(world.buyItem('blue', 'smoke_bell').success, true);
-  assert.equal(world.useItem('blue', 'smoke_bell').success, true);
+  assert.equal(world.useItem('blue', 0).success, true);
   assert.equal(blue.itemShield, 130);
   blue.shield = 80;
-  assert.equal(world.useItem('blue', 'smoke_bell').success, false);
+  assert.equal(world.useItem('blue', 0).success, false);
   world.tick = 149;
   world.step();
   assert.equal(blue.itemShield, 0);
   assert.equal(blue.shield, 80);
-  assert.equal(world.useItem('blue', 'smoke_bell').success, false);
+  assert.equal(world.useItem('blue', 0).success, false);
   world.tick = 750;
-  assert.equal(world.useItem('blue', 'smoke_bell').success, true);
+  assert.equal(world.useItem('blue', 0).success, true);
 });
 
 test('healing charm chooses the weakest nearby ally', () => {
@@ -97,7 +97,7 @@ test('healing charm chooses the weakest nearby ally', () => {
   green.y = blue.y;
   blue.hp = 100;
   green.hp = 20;
-  assert.equal(world.useItem('blue', 'healing_charm').success, true);
+  assert.equal(world.useItem('blue', 0).success, true);
   assert.equal(green.hp, green.maxHp);
   assert.equal(blue.hp, 100);
 });
@@ -295,12 +295,6 @@ test('tower protects barracks and throne; destroyed throne decides the match', (
     assert.equal(world.units.damageUnit(1, tower.id, 650, 1), true);
   }
   assert.equal(world.units.damageUnit(1, barracks.id, 1000, 1), true);
-  for (const other of units.filter(unit => unit.kind === 'barracks' && unit.team === 2 && unit.lane === 2)) {
-    for (const tower of units.filter(unit => unit.kind === 'tower' && unit.team === 2 && unit.lane === 2)) {
-      world.units.damageUnit(1, tower.id, 650, 1);
-    }
-    world.units.damageUnit(1, other.id, 1000, 1);
-  }
   assert.equal(world.units.damageUnit(1, throne.id, 1800, 1), true);
   world.step();
   assert.equal(world.snapshot().status, 'finished');
@@ -323,7 +317,7 @@ test('dash stops at server-owned structures', () => {
   assert.equal(blue.y, tower.y);
 });
 
-test('Q queued while dead casts after respawn', () => {
+test('Q pressed while dead is ignored and works after respawn', () => {
   const hero = { ...heroes[0], maxMana: 100, abilities: [{ key: 'Q', cooldown: 1000, manaCost: 10, damage: 0, range: 200 }] };
   const world = new MatchWorld('respawn-cast', players, [hero]);
   world.selectHero('blue', 'fighter');
@@ -336,6 +330,9 @@ test('Q queued while dead casts after respawn', () => {
   assert.equal(blue.hp, 0);
   world.step();
   assert.equal(blue.hp, blue.maxHp);
+  assert.equal(blue.mana, 100);
+  world.setInput('blue', { seq: 2, dx: 0, dy: 0, attack: false, cast: 'Q' });
+  world.step();
   assert.equal(blue.mana, 90);
   assert.ok(blue.x > 320);
   assert.ok(world.snapshot().effects.some(effect => effect.kind === 'dash' && effect.casterId === 'blue'));
@@ -392,4 +389,44 @@ test('ability damage remains authoritative when both players cast', () => {
   assert.equal(world.status, 'playing');
   assert.equal(blue.hp, 100);
   assert.equal(red.hp, 0);
+});
+
+
+test('duplicate lifesteal items stack and item slots have independent cooldowns', () => {
+  const catalog = [
+    { index: 1, id: 'blood', name: 'Blood', description: '', price: 100, stats: { lifesteal: 0.25 }, components: [], cooldown: 0 },
+    { index: 2, id: 'leaf', name: 'Leaf', description: '', price: 100, stats: {}, components: [], activeKind: 'heal', cooldown: 30 },
+  ];
+  const world = new MatchWorld('stack', players, heroes, catalog);
+  world.selectHero('blue', 'fighter'); world.selectHero('red', 'fighter');
+  const blue = world.players.get('blue');
+  for (const id of ['blood', 'blood', 'leaf', 'leaf']) assert.equal(world.buyItem('blue', id).success, true);
+  assert.equal(blue.lifesteal, 0.5);
+  assert.equal(world.useItem('blue', 2).success, true);
+  assert.equal(world.useItem('blue', 2).success, false);
+  assert.equal(world.useItem('blue', 3).success, true);
+  world.units.units.clear();
+  const red = world.players.get('red');
+  blue.x = 1000; blue.y = 1000; red.x = 1080; red.y = 1000;
+  blue.hp = 40; red.hp = 100; red.nextAttackTick = 1000;
+  world.step();
+  assert.equal(red.hp, 60);
+  assert.equal(blue.hp, 60);
+});
+
+test('last stand stops respawns, elimination wins, and 30:00 is a draw when both survive', () => {
+  const world = startedWorld();
+  const blue = world.players.get('blue');
+  const red = world.players.get('red');
+  blue.hp = 0; blue.respawnTick = 45001;
+  world.tick = 15 * 60 * 30 - 1;
+  world.step();
+  assert.equal(blue.hp, 0);
+  assert.equal(world.status, 'finished');
+  assert.equal(world.winnerTeam, 2);
+  const draw = startedWorld();
+  draw.tick = 30 * 60 * 30 - 1;
+  draw.step();
+  assert.equal(draw.status, 'finished');
+  assert.equal(draw.winnerTeam, undefined);
 });

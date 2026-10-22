@@ -10,7 +10,8 @@ function describeStats(stats: ItemDefinition['stats']): string {
     attack: 'attack', maxHp: 'HP', maxMana: 'mana', speed: 'speed',
     hpRegen: 'HP/s', manaRegen: 'mana/s',
   };
-  return Object.entries(stats).map(([key, value]) => `+${value} ${labels[key] || key}`).join(' · ');
+  return Object.entries(stats).map(([key, value]) => key === 'lifesteal'
+    ? `+${Math.round(value * 100)}% lifesteal` : `+${value} ${labels[key] || key}`).join(' · ');
 }
 
 export function EconomyOverlay({ matchId, items }: Props) {
@@ -24,10 +25,10 @@ export function EconomyOverlay({ matchId, items }: Props) {
   const byIndex = useMemo(() => new Map(items.map(item => [item.index, item])), [items]);
   const byId = useMemo(() => new Map(items.map(item => [item.id, item])), [items]);
   const owned = player?.inventory.map(slot => byIndex.get(slot.itemIndex)).filter((item): item is ItemDefinition => !!item) ?? [];
-  const actives = player?.inventory.map(slot => ({ slot, item: byIndex.get(slot.itemIndex) }))
-    .filter((entry): entry is { slot: typeof entry.slot; item: ItemDefinition } => !!entry.item?.activeKind) ?? [];
-  const activeIdsRef = useRef<string[]>([]);
-  activeIdsRef.current = actives.map(entry => entry.item.id);
+  const actives = player?.inventory.map((slot, index) => ({ slot, index, item: byIndex.get(slot.itemIndex) }))
+    .filter((entry): entry is { slot: typeof entry.slot; index: number; item: ItemDefinition } => !!entry.item?.activeKind) ?? [];
+  const activeSlotsRef = useRef<number[]>([]);
+  activeSlotsRef.current = actives.map(entry => entry.index);
 
   useEffect(() => {
     const update = (next: WorldPlayer, nextTick: number, available: boolean) => {
@@ -39,7 +40,7 @@ export function EconomyOverlay({ matchId, items }: Props) {
     return () => EventBus.off('game:economy', update);
   }, []);
 
-  const act = async (action: 'buy' | 'use', itemId: string) => {
+  const act = async (action: 'buy' | 'use', itemId: string | number) => {
     if (busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
@@ -51,12 +52,12 @@ export function EconomyOverlay({ matchId, items }: Props) {
 
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if (event.repeat || event.target instanceof HTMLInputElement) return;
+      if (event.repeat || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
       if (event.key.toLowerCase() === 'b') { setOpen(value => !value); event.preventDefault(); }
       if (event.key === 'Escape') setOpen(false);
-      const index = event.key.toLowerCase() === 'z' ? 0 : event.key.toLowerCase() === 'x' ? 1 : -1;
-      if (index >= 0 && activeIdsRef.current[index]) {
-        void act('use', activeIdsRef.current[index]);
+      const index = ['z', 'x', 'c', 'v'].indexOf(event.key.toLowerCase());
+      if (index >= 0 && activeSlotsRef.current[index] !== undefined) {
+        void act('use', activeSlotsRef.current[index]);
         event.preventDefault();
       }
     };
@@ -73,13 +74,13 @@ export function EconomyOverlay({ matchId, items }: Props) {
           Shop <span className="hidden md:inline">B</span>
         </button>
       </div>
-      <div className="pointer-events-none absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 gap-2">
-        {actives.map(({ item, slot }, index) => (
-          <button key={item.id} type="button" aria-label={`Use ${item.name}`}
+      <div className="pointer-events-none absolute bottom-3 left-1/2 z-20 flex max-w-[45vw] -translate-x-1/2 gap-2 overflow-x-auto">
+        {actives.map(({ item, slot, index }, activeIndex) => (
+          <button key={index} type="button" aria-label={`Use ${item.name} slot ${index + 1}`}
             disabled={busy || tick < slot.readyTick}
-            onClick={() => void act('use', item.id)}
+            onClick={() => void act('use', index)}
             className="pointer-events-auto min-h-11 min-w-14 rounded border border-cyan-300 bg-slate-950/90 px-2 text-xs font-bold text-white disabled:opacity-50">
-            {item.name}<span className="block">{tick < slot.readyTick ? `${Math.ceil((slot.readyTick - tick) / 30)}s` : index === 0 ? 'Z' : 'X'}</span>
+            {item.name}<span className="block">{tick < slot.readyTick ? `${Math.ceil((slot.readyTick - tick) / 30)}s` : ['Z', 'X', 'C', 'V'][activeIndex] || 'Tap'}</span>
           </button>
         ))}
       </div>
@@ -92,21 +93,26 @@ export function EconomyOverlay({ matchId, items }: Props) {
           </div>
           {error && <p role="alert" className="mx-3 mt-2 rounded bg-red-900 p-2 text-sm">{error}</p>}
           <div className="overflow-y-auto overscroll-contain p-3">
-            <p className="mb-2 text-xs text-slate-300">Inventory {owned.length}/6: {owned.map(item => item.name).join(', ') || 'empty'}</p>
+            <p className="mb-2 text-xs text-slate-300">Inventory {owned.length}: {owned.map(item => item.name).join(', ') || 'empty'}</p>
             <div className="grid gap-2 sm:grid-cols-2">
               {items.map(item => {
-                const has = owned.some(entry => entry.id === item.id);
                 const components = item.components.map(id => byId.get(id)).filter((entry): entry is ItemDefinition => !!entry);
-                const price = item.price - components.filter(entry => owned.some(existing => existing.id === entry.id)).reduce((sum, entry) => sum + entry.price, 0);
+                const available = [...owned];
+                const price = item.price - components.reduce((sum, entry) => {
+                  const slot = available.findIndex(existing => existing.id === entry.id);
+                  if (slot < 0) return sum;
+                  available.splice(slot, 1);
+                  return sum + entry.price;
+                }, 0);
                 return <div key={item.id} className="rounded border border-slate-600 bg-slate-800 p-2 text-xs">
                   <div className="flex items-start justify-between gap-2"><strong className="text-sm text-amber-100">{item.name}</strong><span>{item.price} gold</span></div>
                   <p>{describeStats(item.stats)}</p>
                   {components.length > 0 && <p className="text-slate-300">Recipe: {components.map(entry => entry.name).join(' + ')}</p>}
                   {item.activeKind && <p className="text-cyan-200">Active: {item.description} {item.cooldown}s cooldown</p>}
-                  <button type="button" aria-label={`Buy ${item.name}`} disabled={busy || !atShop || has || (player?.gold ?? 0) < price}
+                  <button type="button" aria-label={`Buy ${item.name}`} disabled={busy || !atShop || (player?.gold ?? 0) < price}
                     onClick={() => void act('buy', item.id)}
                     className="mt-2 min-h-11 rounded bg-amber-600 px-3 font-semibold text-black disabled:bg-slate-600 disabled:text-slate-300">
-                    {has ? 'Owned' : `Buy · ${price}`}
+                    {`Buy · ${price}`}
                   </button>
                 </div>;
               })}

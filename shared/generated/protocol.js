@@ -388,6 +388,7 @@ export const moba = $root.moba = (() => {
          * @property {number|null} [target] Effect target
          * @property {number|null} [tick] Effect tick
          * @property {number|null} [sourceUnit] Effect sourceUnit
+         * @property {number|null} [amount] Effect amount
          */
 
         /**
@@ -470,6 +471,14 @@ export const moba = $root.moba = (() => {
         Effect.prototype.sourceUnit = 0;
 
         /**
+         * Effect amount.
+         * @member {number} amount
+         * @memberof moba.Effect
+         * @instance
+         */
+        Effect.prototype.amount = 0;
+
+        /**
          * Creates a new Effect instance using the specified properties.
          * @function create
          * @memberof moba.Effect
@@ -513,6 +522,8 @@ export const moba = $root.moba = (() => {
                 writer.uint32(/* id 7, wireType 0 =*/56).uint32(message.tick);
             if (message.sourceUnit != null && Object.hasOwnProperty.call(message, "sourceUnit"))
                 writer.uint32(/* id 8, wireType 0 =*/64).uint32(message.sourceUnit);
+            if (message.amount != null && Object.hasOwnProperty.call(message, "amount"))
+                writer.uint32(/* id 9, wireType 0 =*/72).uint32(message.amount);
             return writer;
         };
 
@@ -595,6 +606,10 @@ export const moba = $root.moba = (() => {
                         message.sourceUnit = reader.uint32();
                         break;
                     }
+                case 9: {
+                        message.amount = reader.uint32();
+                        break;
+                    }
                 default:
                     reader.skipType(tag & 7, long);
                     break;
@@ -663,6 +678,9 @@ export const moba = $root.moba = (() => {
             if (message.sourceUnit != null && Object.hasOwnProperty.call(message, "sourceUnit"))
                 if (!$util.isInteger(message.sourceUnit))
                     return "sourceUnit: integer expected";
+            if (message.amount != null && Object.hasOwnProperty.call(message, "amount"))
+                if (!$util.isInteger(message.amount))
+                    return "amount: integer expected";
             return null;
         };
 
@@ -700,6 +718,8 @@ export const moba = $root.moba = (() => {
                 message.tick = object.tick >>> 0;
             if (object.sourceUnit != null)
                 message.sourceUnit = object.sourceUnit >>> 0;
+            if (object.amount != null)
+                message.amount = object.amount >>> 0;
             return message;
         };
 
@@ -729,6 +749,7 @@ export const moba = $root.moba = (() => {
                 object.target = 0;
                 object.tick = 0;
                 object.sourceUnit = 0;
+                object.amount = 0;
             }
             if (message.id != null && Object.hasOwnProperty.call(message, "id"))
                 object.id = message.id;
@@ -746,6 +767,8 @@ export const moba = $root.moba = (() => {
                 object.tick = message.tick;
             if (message.sourceUnit != null && Object.hasOwnProperty.call(message, "sourceUnit"))
                 object.sourceUnit = message.sourceUnit;
+            if (message.amount != null && Object.hasOwnProperty.call(message, "amount"))
+                object.amount = message.amount;
             return object;
         };
 
@@ -1205,6 +1228,7 @@ export const moba = $root.moba = (() => {
          * @property {number|null} [lastHits] PlayerState lastHits
          * @property {number|null} [assists] PlayerState assists
          * @property {Array.<moba.IInventorySlot>|null} [inventory] PlayerState inventory
+         * @property {Array.<number>|null} [abilityReadyTicks] PlayerState abilityReadyTicks
          */
 
         /**
@@ -1217,6 +1241,7 @@ export const moba = $root.moba = (() => {
          */
         function PlayerState(properties) {
             this.inventory = [];
+            this.abilityReadyTicks = [];
             if (properties)
                 for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                     if (properties[keys[i]] != null && keys[i] !== "__proto__")
@@ -1360,6 +1385,14 @@ export const moba = $root.moba = (() => {
         PlayerState.prototype.inventory = $util.emptyArray;
 
         /**
+         * PlayerState abilityReadyTicks.
+         * @member {Array.<number>} abilityReadyTicks
+         * @memberof moba.PlayerState
+         * @instance
+         */
+        PlayerState.prototype.abilityReadyTicks = $util.emptyArray;
+
+        /**
          * Creates a new PlayerState instance using the specified properties.
          * @function create
          * @memberof moba.PlayerState
@@ -1422,6 +1455,12 @@ export const moba = $root.moba = (() => {
             if (message.inventory != null && message.inventory.length)
                 for (let i = 0; i < message.inventory.length; ++i)
                     $root.moba.InventorySlot.encode(message.inventory[i], writer.uint32(/* id 17, wireType 2 =*/138).fork(), q + 1).ldelim();
+            if (message.abilityReadyTicks != null && message.abilityReadyTicks.length) {
+                writer.uint32(/* id 18, wireType 2 =*/146).fork();
+                for (let i = 0; i < message.abilityReadyTicks.length; ++i)
+                    writer.uint32(message.abilityReadyTicks[i]);
+                writer.ldelim();
+            }
             return writer;
         };
 
@@ -1542,6 +1581,23 @@ export const moba = $root.moba = (() => {
                         message.inventory.push($root.moba.InventorySlot.decode(reader, reader.uint32(), undefined, long + 1));
                         break;
                     }
+                case 18: {
+                        if (!(message.abilityReadyTicks && message.abilityReadyTicks.length))
+                            message.abilityReadyTicks = [];
+                        if ((tag & 7) === 2) {
+                            let end2 = reader.uint32() + reader.pos;
+                            if (end2 > reader.len)
+                                throw RangeError("index out of range");
+                            reader.len = end2;
+                            while (reader.pos < end2)
+                                message.abilityReadyTicks.push(reader.uint32());
+                            if (reader.pos !== end2)
+                                throw RangeError("index out of range");
+                            reader.len = end;
+                        } else
+                            message.abilityReadyTicks.push(reader.uint32());
+                        break;
+                    }
                 default:
                     reader.skipType(tag & 7, long);
                     break;
@@ -1643,6 +1699,13 @@ export const moba = $root.moba = (() => {
                         return "inventory." + error;
                 }
             }
+            if (message.abilityReadyTicks != null && Object.hasOwnProperty.call(message, "abilityReadyTicks")) {
+                if (!Array.isArray(message.abilityReadyTicks))
+                    return "abilityReadyTicks: array expected";
+                for (let i = 0; i < message.abilityReadyTicks.length; ++i)
+                    if (!$util.isInteger(message.abilityReadyTicks[i]))
+                        return "abilityReadyTicks: integer[] expected";
+            }
             return null;
         };
 
@@ -1706,6 +1769,13 @@ export const moba = $root.moba = (() => {
                     message.inventory[i] = $root.moba.InventorySlot.fromObject(object.inventory[i], long + 1);
                 }
             }
+            if (object.abilityReadyTicks) {
+                if (!Array.isArray(object.abilityReadyTicks))
+                    throw TypeError(".moba.PlayerState.abilityReadyTicks: array expected");
+                message.abilityReadyTicks = [];
+                for (let i = 0; i < object.abilityReadyTicks.length; ++i)
+                    message.abilityReadyTicks[i] = object.abilityReadyTicks[i] >>> 0;
+            }
             return message;
         };
 
@@ -1726,8 +1796,10 @@ export const moba = $root.moba = (() => {
             if (q > $util.recursionLimit)
                 throw Error("max depth exceeded");
             let object = {};
-            if (options.arrays || options.defaults)
+            if (options.arrays || options.defaults) {
                 object.inventory = [];
+                object.abilityReadyTicks = [];
+            }
             if (options.defaults) {
                 object.index = 0;
                 object.x = 0;
@@ -1782,6 +1854,11 @@ export const moba = $root.moba = (() => {
                 object.inventory = [];
                 for (let j = 0; j < message.inventory.length; ++j)
                     object.inventory[j] = $root.moba.InventorySlot.toObject(message.inventory[j], options, q + 1);
+            }
+            if (message.abilityReadyTicks && message.abilityReadyTicks.length) {
+                object.abilityReadyTicks = [];
+                for (let j = 0; j < message.abilityReadyTicks.length; ++j)
+                    object.abilityReadyTicks[j] = message.abilityReadyTicks[j];
             }
             return object;
         };

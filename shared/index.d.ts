@@ -16,7 +16,8 @@ export interface MatchParticipant {
 export interface MatchFound {
   matchId: string;
   participants: MatchParticipant[];
-  heroes: { id: string; name: string; role: string; color: number }[];
+  heroes: { id: string; name: string; role: string; color: number;
+    abilities: { key: 'Q' | '1' | '2' | '3'; name: string; manaCost: number; cooldown: number }[] }[];
   items: ItemDefinition[];
 }
 
@@ -26,7 +27,7 @@ export interface ItemDefinition {
   name: string;
   description: string;
   price: number;
-  stats: { attack?: number; maxHp?: number; maxMana?: number; speed?: number; hpRegen?: number; manaRegen?: number };
+  stats: { attack?: number; maxHp?: number; maxMana?: number; speed?: number; hpRegen?: number; manaRegen?: number; lifesteal?: number };
   components: string[];
   activeKind?: 'heal' | 'shield';
   cooldown: number;
@@ -53,6 +54,7 @@ export interface WorldPlayer {
   goldEarned: number;
   lastHits: number;
   inventory: InventorySlot[];
+  abilityReadyTicks: number[];
   lastProcessedSeq: number;
 }
 
@@ -65,6 +67,7 @@ export interface WorldEffect {
   y: number;
   targetId?: string;
   tick: number;
+  amount?: number;
 }
 
 export type UnitKind = 'creep' | 'neutral' | 'tower' | 'barracks' | 'throne' | 'fountain' | 'shrine' | 'boss';

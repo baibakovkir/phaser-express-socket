@@ -6,21 +6,19 @@ export const mobileInput: Pick<GameInput, 'dx' | 'dy' | 'attack'> = {
   attack: false,
 };
 
-let pendingCast: GameInput['cast'];
+const pendingCasts: NonNullable<GameInput['cast']>[] = [];
 
 export function queueMobileCast(cast: NonNullable<GameInput['cast']>): void {
-  pendingCast = cast;
+  if (pendingCasts.length < 4) pendingCasts.push(cast);
 }
 
 export function takeMobileCast(): GameInput['cast'] {
-  const cast = pendingCast;
-  pendingCast = undefined;
-  return cast;
+  return pendingCasts.shift();
 }
 
 export function resetMobileInput(): void {
   mobileInput.dx = 0;
   mobileInput.dy = 0;
   mobileInput.attack = false;
-  pendingCast = undefined;
+  pendingCasts.length = 0;
 }

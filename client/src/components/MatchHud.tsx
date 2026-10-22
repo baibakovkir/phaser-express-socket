@@ -32,6 +32,8 @@ export function MatchHud() {
       <span>Lane {clock(lane)}</span>
       <span>Jungle {clock(jungle)}</span>
       <span>Oni {boss}</span>
+      <span className={seconds >= 900 ? 'text-red-300' : 'text-cyan-200'}>{seconds >= 900 ? 'Last stand · no respawns' : `Respawns until ${clock(900)}`}</span>
+      <span>Draw at 30:00</span>
       {target && <span className="text-amber-300">Target: {target}</span>}
     </div>
   );

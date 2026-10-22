@@ -141,11 +141,15 @@ async function main() {
     { id: 'sandals', name: 'Traveler Sandals', price: 250, stats: { speed: 16 } },
     { id: 'bead', name: 'Spirit Bead', price: 250, stats: { maxMana: 70, manaRegen: 0.5 } },
     { id: 'lotus', name: 'Lotus Petal', price: 250, stats: { hpRegen: 1.5 } },
+    { id: 'blood_charm', name: 'Blood Charm', price: 350, stats: { attack: 6, lifesteal: 0.1 } },
+    { id: 'healing_leaf', name: 'Healing Leaf', price: 300, stats: {}, activeKind: 'heal', cooldown: 90 },
     { id: 'moon_blade', name: 'Moon Blade', price: 1100, stats: { attack: 22, speed: 25 }, components: ['kunai', 'sandals'] },
     { id: 'guardian_mask', name: 'Guardian Mask', price: 1100, stats: { maxHp: 210, hpRegen: 3 }, components: ['bamboo', 'lotus'] },
     { id: 'spirit_fan', name: 'Spirit Fan', price: 1100, stats: { attack: 15, maxMana: 130, manaRegen: 2 }, components: ['bead', 'kunai'] },
     { id: 'healing_charm', name: 'Healing Charm', price: 1150, stats: { maxHp: 120, maxMana: 90 }, components: ['bamboo', 'bead'], activeKind: 'heal', cooldown: 30 },
     { id: 'smoke_bell', name: 'Smoke Bell', price: 1150, stats: { speed: 25, hpRegen: 2 }, components: ['sandals', 'lotus'], activeKind: 'shield', cooldown: 25 },
+    { id: 'oni_claw', name: 'Oni Claw', price: 1400, stats: { attack: 26, lifesteal: 0.2 }, components: ['blood_charm', 'kunai'] },
+    { id: 'crimson_crest', name: 'Crimson Crest', price: 1700, stats: { maxHp: 200, hpRegen: 2, lifesteal: 0.15 }, components: ['blood_charm', 'bamboo', 'lotus'] },
   ];
   for (const item of items) {
     const { components, ...data } = item;

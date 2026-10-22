@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent } from 'react';
-import { mobileInput, queueMobileCast, resetMobileInput } from '../input/mobileInput';
+import { mobileInput, resetMobileInput } from '../input/mobileInput';
 import { EventBus } from '../events/EventBus';
 
-const ABILITIES = ['Q', '1', '2', '3'] as const;
 const STICK_RADIUS = 38;
 
 export function MobileControls() {
@@ -72,19 +71,6 @@ export function MobileControls() {
           <div className="pointer-events-none absolute left-1/2 top-1/2 h-12 w-12 rounded-full border border-cyan-200 bg-cyan-600/80" style={{ transform: `translate(calc(-50% + ${stick.x}px), calc(-50% + ${stick.y}px))` }} />
         </div>
         <div className="pointer-events-auto absolute bottom-4 right-4 flex flex-col items-end gap-2">
-          <div className="grid grid-cols-4 gap-1.5">
-            {ABILITIES.map(ability => (
-              <button
-                key={ability}
-                type="button"
-                aria-label={`Cast ${ability}`}
-                className="h-11 w-11 rounded-lg border border-purple-300 bg-purple-900/85 font-bold shadow-lg touch-none select-none active:bg-purple-600"
-                onPointerDown={() => queueMobileCast(ability)}
-              >
-                {ability}
-              </button>
-            ))}
-          </div>
           <button
             type="button"
             aria-label="Select next target"

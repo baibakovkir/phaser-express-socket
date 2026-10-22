@@ -103,7 +103,7 @@ export class UnitSystem {
       return ![...this.units.values()].some(other => other.team === unit.team && other.lane === unit.lane && other.kind === 'tower' && other.hp > 0);
     }
     if (unit.kind === 'throne') {
-      return ![...this.units.values()].some(other => other.team === unit.team && other.kind === 'barracks' && other.hp > 0);
+      return [...this.units.values()].some(other => other.team === unit.team && other.kind === 'barracks' && other.hp <= 0);
     }
     return true;
   }

@@ -73,9 +73,9 @@ test('registration launches a playable client scene', async ({ page }) => {
   const shop = page.getByRole('dialog', { name: 'Fountain shop' });
   await expect(shop).toBeVisible();
   await shop.getByRole('button', { name: 'Buy Kunai' }).click();
-  await expect(shop).toContainText('Inventory 1/6');
-  await shop.getByRole('button', { name: 'Buy Traveler Sandals' }).click();
-  await expect(shop).toContainText('Inventory 2/6');
+  await expect(shop).toContainText('Inventory 1:');
+  await shop.getByRole('button', { name: 'Buy Kunai' }).click();
+  await expect(shop).toContainText('Inventory 2: Kunai, Kunai');
   await shop.getByRole('button', { name: 'Close shop' }).click();
   const initialX = Number(await canvas.getAttribute('data-server-x'));
   await page.keyboard.down('d');
@@ -185,9 +185,11 @@ test('mobile player can scroll through setup and move with touch controls', asyn
     await page.getByRole('button', { name: 'Open shop' }).tap();
     const shop = page.getByRole('dialog', { name: 'Fountain shop' });
     await expect(shop).toBeVisible();
-    await shop.getByRole('button', { name: 'Buy Kunai' }).tap();
-    await expect(shop).toContainText('Inventory 1/6');
+    await shop.getByRole('button', { name: 'Buy Healing Leaf' }).tap();
+    await expect(shop).toContainText('Inventory 1: Healing Leaf');
     await shop.getByRole('button', { name: 'Close shop' }).tap();
+    await page.keyboard.press('z');
+    await expect(page.getByRole('button', { name: 'Use Healing Leaf slot 1' })).toContainText('90s');
     const shell = page.locator('.touch-match-shell');
     await expect(shell).toBeVisible();
     const shellBox = await shell.boundingBox();

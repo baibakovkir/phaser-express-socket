@@ -50,7 +50,7 @@ class MatchManager {
     const items: ItemDefinition[] = itemRows.map((item, index) => ({
       index: index + 1, id: item.id, name: item.name, description: item.description,
       price: item.price, stats: item.stats as ItemDefinition['stats'],
-      components: item.components.map(part => part.componentId),
+      components: item.components.flatMap(part => Array(part.quantity).fill(part.componentId) as string[]),
       ...(item.activeKind === 'heal' || item.activeKind === 'shield' ? { activeKind: item.activeKind } : {}),
       cooldown: item.cooldown,
     }));
@@ -95,7 +95,7 @@ class MatchManager {
       inputBudget: new Map(),
       pendingCommands: new Map(),
       selectionTimer: setTimeout(() => this.abort(matchId, 'Hero selection timed out'), 120_000),
-      durationTimer: setTimeout(() => this.abort(matchId, 'Match time limit reached'), 30 * 60_000),
+      durationTimer: setTimeout(() => this.abort(matchId, 'Match worker exceeded its time limit'), 33 * 60_000),
     };
     this.matches.set(matchId, match);
     void redis.set(`match:${matchId}:meta`, JSON.stringify({ status: 'selecting', participants }), 'EX', 3600)
@@ -141,7 +141,10 @@ class MatchManager {
     const notice: MatchFound = {
       matchId,
       participants,
-      heroes: catalog.map(hero => ({ id: hero.id, name: hero.name, role: hero.role.toLowerCase(), color: colors[hero.role] || 0xffffff })),
+      heroes: catalog.map(hero => ({ id: hero.id, name: hero.name, role: hero.role.toLowerCase(), color: colors[hero.role] || 0xffffff,
+        abilities: hero.abilities.filter(ability => ['Q', '1', '2', '3'].includes(ability.key)).map(ability => ({
+          key: ability.key as 'Q' | '1' | '2' | '3', name: ability.name, manaCost: ability.manaCost, cooldown: ability.cooldown,
+        })) })),
       items,
     };
     this.io.to(matchId).emit('match:found', notice);
@@ -172,9 +175,11 @@ class MatchManager {
     match.worker.postMessage({ type: 'input', playerId, input });
   }
 
-  command(playerId: string, socketId: string, matchId: string, action: 'buy' | 'use', itemId: string): Promise<{ success: boolean; error?: string }> {
+  command(playerId: string, socketId: string, matchId: string, action: 'buy' | 'use', itemId?: string, slot?: number): Promise<{ success: boolean; error?: string }> {
     const match = this.matches.get(matchId);
-    if (!match || match.finished || match.roster.get(playerId) !== socketId || !/^[a-z_]{1,40}$/.test(itemId)) {
+    if (!match || match.finished || match.roster.get(playerId) !== socketId ||
+      (action === 'buy' && (typeof itemId !== 'string' || !/^[a-z_]{1,40}$/.test(itemId))) ||
+      (action === 'use' && (!Number.isSafeInteger(slot) || slot! < 0))) {
       return Promise.resolve({ success: false, error: 'Invalid match or item' });
     }
     if (match.pendingCommands.size >= 64) return Promise.resolve({ success: false, error: 'Too many pending actions' });
@@ -185,7 +190,7 @@ class MatchManager {
         resolve({ success: false, error: 'Item action timed out' });
       }, 3000);
       match.pendingCommands.set(id, result => { clearTimeout(timeout); resolve(result); });
-      match.worker.postMessage({ type: 'command', id, playerId, action, itemId });
+      match.worker.postMessage({ type: 'command', id, playerId, action, itemId, slot });
     });
   }
 

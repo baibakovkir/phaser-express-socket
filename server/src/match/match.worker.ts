@@ -6,7 +6,7 @@ type WorkerCommand =
   | { type: 'select'; playerId: string; heroId: string }
   | { type: 'input'; playerId: string; input: GameInput }
   | { type: 'disconnect'; playerId: string }
-  | { type: 'command'; id: number; playerId: string; action: 'buy' | 'use'; itemId: string };
+  | { type: 'command'; id: number; playerId: string; action: 'buy' | 'use'; itemId?: string; slot?: number };
 
 const data = workerData as { matchId: string; participants: MatchParticipant[]; heroes: HeroStats[]; items: ItemDefinition[] };
 const worldModule = new URL(`./world.${import.meta.url.endsWith('.ts') ? 'ts' : 'js'}`, import.meta.url);
@@ -18,7 +18,7 @@ parentPort?.on('message', (message: WorkerCommand) => {
   if (message.type === 'input') world.setInput(message.playerId, message.input);
   if (message.type === 'disconnect') world.pausePlayer(message.playerId);
   if (message.type === 'command') {
-    const result = message.action === 'buy' ? world.buyItem(message.playerId, message.itemId) : world.useItem(message.playerId, message.itemId);
+    const result = message.action === 'buy' ? world.buyItem(message.playerId, message.itemId!) : world.useItem(message.playerId, message.slot!);
     parentPort?.postMessage({ type: 'command:result', id: message.id, result });
     if (result.success) parentPort?.postMessage({ type: 'snapshot', snapshot: world.snapshot() });
   }

@@ -244,12 +244,13 @@ export function initSocket(httpServer: HttpServer) {
     });
 
     for (const [event, action] of [['game:buy-item', 'buy'], ['game:use-item', 'use']] as const) {
-      socket.on(event, async (data: { matchId: string; itemId: string }, callback: (response: { success: boolean; error?: string }) => void) => {
+      socket.on(event, async (data: { matchId: string; itemId?: string; slot?: number }, callback: (response: { success: boolean; error?: string }) => void) => {
         if (typeof callback !== 'function') return;
-        if (!socket.auth || !data || typeof data.matchId !== 'string' || typeof data.itemId !== 'string') {
+        if (!socket.auth || !data || typeof data.matchId !== 'string' ||
+          (action === 'buy' && typeof data.itemId !== 'string') || (action === 'use' && !Number.isSafeInteger(data.slot))) {
           return callback({ success: false, error: 'Invalid item action' });
         }
-        callback(await matchManager.command(socket.auth.playerId, socket.id, data.matchId, action, data.itemId));
+        callback(await matchManager.command(socket.auth.playerId, socket.id, data.matchId, action, data.itemId, data.slot));
       });
     }
 

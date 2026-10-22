@@ -20,6 +20,7 @@ message Effect {
   uint32 target = 6;
   uint32 tick = 7;
   uint32 source_unit = 8;
+  uint32 amount = 9;
 }
 
 message Unit {
@@ -51,6 +52,7 @@ message PlayerState {
   uint32 last_hits = 15;
   uint32 assists = 16;
   repeated InventorySlot inventory = 17;
+  repeated uint32 ability_ready_ticks = 18;
 }
 
 message InventorySlot {

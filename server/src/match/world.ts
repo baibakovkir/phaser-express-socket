@@ -27,6 +27,7 @@ export interface HeroStats {
 interface PlayerState extends WorldPlayer {
   speed: number;
   attack: number;
+  lifesteal: number;
   selected: boolean;
   input: GameInput;
   nextAttackTick: number;
@@ -45,6 +46,8 @@ const RADIUS = 18;
 const ATTACK_RANGE = 145;
 const ATTACK_INTERVAL = 24;
 const RESPAWN_TICKS = 150;
+const LAST_STAND_TICK = 15 * 60 * TICKS_PER_SECOND;
+const MATCH_END_TICK = 30 * 60 * TICKS_PER_SECOND;
 
 export class MatchWorld {
   readonly players = new Map<string, PlayerState>();
@@ -85,6 +88,7 @@ export class MatchWorld {
         maxMana: firstHero.maxMana ?? 0,
         speed: firstHero.speed,
         attack: firstHero.attack,
+        lifesteal: 0,
         kills: 0,
         deaths: 0,
         assists: 0,
@@ -92,6 +96,7 @@ export class MatchWorld {
         goldEarned: 0,
         lastHits: 0,
         inventory: [],
+        abilityReadyTicks: [0, 0, 0, 0],
         lastProcessedSeq: 0,
         selected: false,
         input: { seq: 0, dx: 0, dy: 0, attack: false },
@@ -133,12 +138,13 @@ export class MatchWorld {
     if (!fountain || Math.hypot(player.x - fountain.x, player.y - fountain.y) > 180) {
       return { success: false, error: 'Return to your fountain to shop' };
     }
-    if (player.inventory.some(slot => slot.itemIndex === item.index)) return { success: false, error: 'Already owned' };
-    const owned = item.components.map(id => player.inventory.find(slot => this.items.find(entry => entry.index === slot.itemIndex)?.id === id));
-    const used = owned.filter((slot): slot is NonNullable<typeof slot> => !!slot);
+    const used: WorldPlayer['inventory'] = [];
+    for (const id of item.components) {
+      const component = player.inventory.find(slot => !used.includes(slot) && this.items.find(entry => entry.index === slot.itemIndex)?.id === id);
+      if (component) used.push(component);
+    }
     const price = item.price - used.reduce((sum, slot) => sum + (this.items.find(entry => entry.index === slot.itemIndex)?.price ?? 0), 0);
     if (player.gold < price) return { success: false, error: 'Not enough gold' };
-    if (player.inventory.length - used.length >= 6) return { success: false, error: 'Inventory is full' };
     player.gold -= price;
     player.inventory = player.inventory.filter(slot => !used.includes(slot));
     player.inventory.push({ itemIndex: item.index, readyTick: 0 });
@@ -146,10 +152,10 @@ export class MatchWorld {
     return { success: true };
   }
 
-  useItem(playerId: string, itemId: string): { success: boolean; error?: string } {
+  useItem(playerId: string, slotIndex: number): { success: boolean; error?: string } {
     const player = this.players.get(playerId);
-    const item = this.items.find(candidate => candidate.id === itemId);
-    const slot = player?.inventory.find(entry => entry.itemIndex === item?.index);
+    const slot = Number.isSafeInteger(slotIndex) && slotIndex >= 0 ? player?.inventory[slotIndex] : undefined;
+    const item = this.items.find(candidate => candidate.index === slot?.itemIndex);
     if (this.status !== 'playing' || !player || player.hp <= 0 || !item?.activeKind || !slot) {
       return { success: false, error: 'Active item unavailable' };
     }
@@ -182,6 +188,7 @@ export class MatchWorld {
     player.maxMana = maxMana;
     player.attack = hero.attack + total('attack');
     player.speed = hero.speed + total('speed');
+    player.lifesteal = total('lifesteal');
   }
 
   private award(player: PlayerState, amount: number): void {
@@ -193,7 +200,9 @@ export class MatchWorld {
     if (unit.kind === 'creep' || unit.kind === 'neutral') {
       const player = playerId && this.players.get(playerId);
       if (player) {
-        this.award(player, unit.kind === 'creep' ? 35 : 55);
+        const bounty = unit.kind === 'creep' ? 35 : 55;
+        this.award(player, bounty);
+        this.effects.push({ id: this.nextEffectId++, casterId: player.id, kind: 'gold', x: unit.x, y: unit.y, tick: this.tick, amount: bounty });
         if (unit.kind === 'creep') player.lastHits++;
       }
     } else {
@@ -210,7 +219,7 @@ export class MatchWorld {
     if (Math.abs(input.dx) > 1 || Math.abs(input.dy) > 1 || typeof input.attack !== 'boolean') return;
     if (input.cast !== undefined && !['Q', '1', '2', '3'].includes(input.cast)) return;
     if (input.targetUnitId !== undefined && (!Number.isSafeInteger(input.targetUnitId) || input.targetUnitId < 1)) return;
-    if (input.cast && !player.queuedCast) player.queuedCast = input.cast;
+    if (input.cast && player.hp > 0 && !player.queuedCast) player.queuedCast = input.cast;
     player.input = player.hp > 0 ? input : { seq: input.seq, dx: 0, dy: 0, attack: false };
     if (player.hp <= 0) player.lastProcessedSeq = input.seq;
   }
@@ -230,7 +239,7 @@ export class MatchWorld {
     for (const player of players) {
       if (this.tick % TICKS_PER_SECOND === 0) this.award(player, 2);
       if (player.hp <= 0) {
-        if (this.tick >= player.respawnTick) {
+        if (this.tick < LAST_STAND_TICK && this.tick >= player.respawnTick) {
           player.hp = player.maxHp;
           player.x = BASES[player.team].x + (player.team === 1 ? 60 : -60);
           player.y = BASES[player.team].y + (player.team === 1 ? 40 : -40);
@@ -282,8 +291,16 @@ export class MatchWorld {
       const amount = player.attack * (this.tick < player.attackBoostUntil ? 1.5 : 1) * this.units.damageMultiplier(player.team, this.tick);
       const hitUnit = unitTarget && (selectedInRange || !heroTarget ||
         Math.hypot(unitTarget.x - player.x, unitTarget.y - player.y) < Math.hypot(heroTarget.x - player.x, heroTarget.y - player.y));
-      if (hitUnit) this.units.damageUnit(player.team, unitTarget.id, amount, this.tick, player.id);
-      else if (heroTarget) this.applyDamage(player, heroTarget, amount);
+      let actualDamage = 0;
+      if (hitUnit) {
+        const before = unitTarget.hp;
+        this.units.damageUnit(player.team, unitTarget.id, amount, this.tick, player.id);
+        if (['creep', 'neutral', 'boss'].includes(unitTarget.kind)) actualDamage = before - unitTarget.hp;
+      } else if (heroTarget) actualDamage = this.applyDamage(player, heroTarget, amount);
+      if (actualDamage > 0 && player.lifesteal > 0) {
+        player.hp = Math.min(player.maxHp, player.hp + Math.round(actualDamage * player.lifesteal));
+        this.effect(player, 'lifesteal', player.x, player.y);
+      }
       player.nextAttackTick = this.tick + ATTACK_INTERVAL;
       this.effect(player, 'attack', hitUnit ? unitTarget.x : heroTarget?.x ?? player.x + player.facing.x * 75,
         hitUnit ? unitTarget.y : heroTarget?.y ?? player.y + player.facing.y * 75, hitUnit ? undefined : heroTarget?.id);
@@ -295,8 +312,15 @@ export class MatchWorld {
     if (this.units.winnerTeam) {
       this.winnerTeam = this.units.winnerTeam;
       this.status = 'finished';
+    } else if (this.tick >= LAST_STAND_TICK) {
+      const aliveTeams = new Set(players.filter(player => player.hp > 0).map(player => player.team));
+      const participatingTeams = new Set(players.map(player => player.team));
+      if ((participatingTeams.size === 2 && aliveTeams.size < 2) || this.tick >= MATCH_END_TICK) {
+        this.winnerTeam = aliveTeams.size === 1 && participatingTeams.size === 2 ? [...aliveTeams][0] : undefined;
+        this.status = 'finished';
+      }
     }
-    this.effects = this.effects.filter(effect => this.tick - effect.tick < 18);
+    this.effects = this.effects.filter(effect => this.tick - effect.tick < (effect.kind === 'gold' ? 30 : 18));
   }
 
   private cast(player: PlayerState, key: NonNullable<GameInput['cast']>, players: PlayerState[]): void {
@@ -347,7 +371,7 @@ export class MatchWorld {
         this.effect(player, 'buff', player.x, player.y);
       }
     } else if (key === '3' && player.heroId === 'support') {
-      const target = players.find(other => other.team === player.team && other.hp === 0);
+      const target = this.tick < LAST_STAND_TICK ? players.find(other => other.team === player.team && other.hp === 0) : undefined;
       if (!target) used = false;
       else {
         target.hp = Math.ceil(target.maxHp * 0.4);
@@ -390,19 +414,21 @@ export class MatchWorld {
     player.cooldowns.set(key, this.tick + Math.max(1, Math.ceil(ability.cooldown * TICKS_PER_SECOND / 1000)));
   }
 
-  private applyDamage(attacker: PlayerState, target: PlayerState, amount: number): void {
-    if (target.hp <= 0) return;
+  private applyDamage(attacker: PlayerState, target: PlayerState, amount: number): number {
+    if (target.hp <= 0) return 0;
     target.damageContributors.set(attacker.id, this.tick);
+    const before = target.hp;
     const itemAbsorbed = Math.min(target.itemShield, amount);
     target.itemShield -= itemAbsorbed;
     const spellAbsorbed = Math.min(target.shield, amount - itemAbsorbed);
     target.shield -= spellAbsorbed;
     target.hp = Math.max(0, target.hp - Math.round(amount - itemAbsorbed - spellAbsorbed));
-    if (target.hp > 0) return;
+    if (target.hp > 0) return before - target.hp;
     target.deaths++;
     target.respawnTick = this.tick + RESPAWN_TICKS;
     attacker.kills++;
     this.award(attacker, 180);
+    this.effects.push({ id: this.nextEffectId++, casterId: attacker.id, kind: 'gold', x: target.x, y: target.y, tick: this.tick, amount: 180 });
     for (const [id, tick] of target.damageContributors) {
       const ally = this.players.get(id);
       if (ally && ally.id !== attacker.id && ally.team === attacker.team && this.tick - tick <= 10 * TICKS_PER_SECOND) {
@@ -411,11 +437,16 @@ export class MatchWorld {
       }
     }
     target.damageContributors.clear();
+    return before;
   }
 
   private applyUnitDamage(target: PlayerState, amount: number): void {
     if (target.hp <= 0) return;
-    target.hp = Math.max(0, target.hp - Math.round(amount));
+    const itemAbsorbed = Math.min(target.itemShield, amount);
+    target.itemShield -= itemAbsorbed;
+    const spellAbsorbed = Math.min(target.shield, amount - itemAbsorbed);
+    target.shield -= spellAbsorbed;
+    target.hp = Math.max(0, target.hp - Math.round(amount - itemAbsorbed - spellAbsorbed));
     if (target.hp === 0) {
       target.deaths++;
       target.respawnTick = this.tick + RESPAWN_TICKS;
@@ -435,8 +466,9 @@ export class MatchWorld {
       matchId: this.matchId,
       tick: this.tick,
       status: this.status,
-      players: [...this.players.values()].map(({ id, username, team, heroId, x, y, hp, maxHp, mana, maxMana, speed, kills, deaths, assists, gold, goldEarned, lastHits, inventory, lastProcessedSeq }) => ({
-        id, username, team, heroId, x, y, hp, maxHp, mana, maxMana, speed, kills, deaths, assists, gold, goldEarned, lastHits, inventory, lastProcessedSeq,
+      players: [...this.players.values()].map(({ id, username, team, heroId, x, y, hp, maxHp, mana, maxMana, speed, kills, deaths, assists, gold, goldEarned, lastHits, inventory, cooldowns, lastProcessedSeq }) => ({
+        id, username, team, heroId, x, y, hp, maxHp, mana, maxMana, speed, kills, deaths, assists, gold, goldEarned, lastHits, inventory,
+        abilityReadyTicks: (['Q', '1', '2', '3'] as const).map(key => cooldowns.get(key) ?? 0), lastProcessedSeq,
       })),
       units: this.units.snapshot(),
       effects: this.effects,

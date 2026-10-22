@@ -5,6 +5,7 @@ import { HeroSelect } from './components/ChampionSelect';
 import { MobileControls } from './components/MobileControls';
 import { MatchHud } from './components/MatchHud';
 import { EconomyOverlay } from './components/EconomyOverlay';
+import { AbilityBar } from './components/AbilityBar';
 import { useGameStore } from './store/gameStore';
 import { EventBus } from './events/EventBus';
 
@@ -23,6 +24,7 @@ const App: React.FC = () => {
   const [phase, setPhase] = useState<GamePhase>('menu');
   const [matchId, setMatchId] = useState<string>('');
   const [matchData, setMatchData] = useState<MatchFoundData | null>(null);
+  const [selectedHeroId, setSelectedHeroId] = useState('');
   const [team, setTeam] = useState<'blue' | 'red'>('blue');
 
   const startGame = useGameStore((state) => state.startGame);
@@ -32,6 +34,7 @@ const App: React.FC = () => {
     if (!participant) return;
     setMatchId(match.matchId);
     setMatchData(match);
+    setSelectedHeroId('');
     setTeam(participant.team === 1 ? 'blue' : 'red');
     setPhase('heroSelect');
   }, []);
@@ -56,6 +59,7 @@ const App: React.FC = () => {
         heroes: matchData?.heroes,
       });
       
+      setSelectedHeroId(selectedHero);
       startGame();
       EventBus.emit('game:started');
       setPhase('playing');
@@ -79,6 +83,8 @@ const App: React.FC = () => {
         />
       </div>
       {phase === 'playing' && touchDevice && <MobileControls />}
+      {phase === 'playing' && matchData?.heroes.find(hero => hero.id === selectedHeroId) &&
+        <AbilityBar hero={matchData.heroes.find(hero => hero.id === selectedHeroId)!} />}
       {phase === 'playing' && matchData && <EconomyOverlay matchId={matchId} items={matchData.items} />}
 
       {/* Menu - Full screen overlay */}

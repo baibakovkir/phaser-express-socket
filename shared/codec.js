@@ -52,6 +52,7 @@ export function encodeSnapshot(snapshot, playerIds) {
       lastHits: player.lastHits,
       assists: player.assists,
       inventory: player.inventory,
+      abilityReadyTicks: player.abilityReadyTicks,
     })),
     effects: snapshot.effects.map(effect => ({
       id: effect.id,
@@ -62,6 +63,7 @@ export function encodeSnapshot(snapshot, playerIds) {
       target: effect.targetId ? (index.get(effect.targetId) ?? -1) + 1 : 0,
       tick: effect.tick,
       sourceUnit: effect.sourceUnitId || 0,
+      amount: effect.amount || 0,
     })),
     units: snapshot.units.map(unit => ({
       id: unit.id,
@@ -106,6 +108,7 @@ export function decodeSnapshot(data, matchId, participants) {
         lastHits: player.lastHits,
         assists: player.assists,
         inventory: player.inventory.map(slot => ({ itemIndex: slot.itemIndex, readyTick: slot.readyTick })),
+        abilityReadyTicks: player.abilityReadyTicks,
         lastProcessedSeq: player.lastProcessedSeq,
       };
     }),
@@ -121,6 +124,7 @@ export function decodeSnapshot(data, matchId, participants) {
         y: effect.y,
         ...(effect.target ? { targetId: participants[effect.target - 1]?.playerId } : {}),
         tick: effect.tick,
+        ...(effect.amount ? { amount: effect.amount } : {}),
       };
     }),
     units: message.units.map(unit => {

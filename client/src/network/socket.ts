@@ -198,9 +198,9 @@ class NetworkManager {
     this.socket.emit("game:input", { matchId, input: encodeInput(input) });
   }
 
-  itemAction(matchId: string, action: 'buy' | 'use', itemId: string): Promise<{ success: boolean; error?: string }> {
+  itemAction(matchId: string, action: 'buy' | 'use', item: string | number): Promise<{ success: boolean; error?: string }> {
     return new Promise(resolve => {
-      this.socket.timeout(4000).emit(`game:${action}-item`, { matchId, itemId },
+      this.socket.timeout(4000).emit(`game:${action}-item`, action === 'buy' ? { matchId, itemId: item } : { matchId, slot: item },
         (error: Error | null, response: { success: boolean; error?: string }) => {
           resolve(error ? { success: false, error: 'Server did not respond' } : response);
         });

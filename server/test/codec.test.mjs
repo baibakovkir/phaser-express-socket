@@ -12,13 +12,14 @@ test('protobuf round trip keeps authoritative fields in a smaller snapshot', () 
     x, y: 250, hp: 320, maxHp: 350, mana: 120, maxMana: 150,
     speed: 330, kills: 1, deaths: 0, lastProcessedSeq: 42,
     assists: 1, gold: 785, goldEarned: 535, lastHits: 4,
-    inventory: [{ itemIndex: 3, readyTick: 180 }],
+    inventory: [{ itemIndex: 3, readyTick: 180 }], abilityReadyTicks: [140, 0, 0, 0],
   });
   const snapshot = {
     matchId: 'match-uuid', tick: 128, status: 'playing',
     players: [player(participants[0], 151), player(participants[1], 1101)],
     effects: [
       { id: 1, casterId: participants[0].playerId, kind: 'nova', x: 300, y: 260, targetId: participants[1].playerId, tick: 126 },
+      { id: 3, casterId: participants[0].playerId, kind: 'gold', x: 310, y: 260, tick: 127, amount: 35 },
       { id: 2, sourceUnitId: 1, kind: 'attack', x: 1100, y: 250, targetId: participants[1].playerId, tick: 127 },
     ],
     units: [{ id: 1, kind: 'tower', team: 1, lane: 1, x: 430, y: 1210, hp: 650, maxHp: 650 }],
