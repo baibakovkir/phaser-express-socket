@@ -149,12 +149,12 @@ export const Menu: React.FC<MenuProps> = ({ onGameStart }) => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-8">
+    <div className="min-h-full bg-gray-900 flex flex-col items-center justify-start px-4 py-6 sm:p-8 md:justify-center">
       {/* Title */}
-      <h1 className="text-6xl font-bold text-cyan-400 mb-3 tracking-wider">NINJAS X</h1>
+      <h1 className="text-4xl sm:text-6xl font-bold text-cyan-400 mb-3 tracking-wider">NINJAS X</h1>
       
       {/* Status */}
-      <div className={`text-lg mb-8 px-6 py-2 rounded ${
+      <div className={`max-w-full break-words text-center text-base sm:text-lg mb-6 sm:mb-8 px-4 sm:px-6 py-2 rounded ${
         status.includes('error') || status.includes('Failed') 
           ? 'bg-red-900/50 text-red-400 border border-red-700' 
           : 'bg-gray-800 text-gray-300 border border-gray-700'
@@ -164,7 +164,7 @@ export const Menu: React.FC<MenuProps> = ({ onGameStart }) => {
 
       {/* Player Info */}
       {player && (
-        <div className="mb-8 px-8 py-4 bg-gray-800 rounded-lg border border-gray-700 flex items-center gap-6">
+        <div className="mb-6 sm:mb-8 w-full sm:w-auto px-4 sm:px-8 py-4 bg-gray-800 rounded-lg border border-gray-700 flex flex-wrap items-center justify-center gap-4 sm:gap-6">
           <div>
             <span className="text-gray-400">Player: </span>
             <span className="text-cyan-400 font-bold text-lg">{player.username}</span>
@@ -180,9 +180,9 @@ export const Menu: React.FC<MenuProps> = ({ onGameStart }) => {
       {/* No Lobby - Show creation options */}
       {!lobby ? (
         <div className="flex flex-col gap-6 w-full max-w-4xl">
-        <div className="flex gap-6 w-full justify-center">
+        <div className="flex flex-col md:flex-row gap-6 w-full justify-center">
           {/* Create Lobby */}
-          <div className="bg-gray-800 p-8 rounded-xl border border-gray-700 w-96">
+          <div className="bg-gray-800 p-5 sm:p-8 rounded-xl border border-gray-700 w-full md:w-96">
             <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
               <span className="text-3xl">🏠</span> Create Lobby
             </h2>
@@ -213,7 +213,7 @@ export const Menu: React.FC<MenuProps> = ({ onGameStart }) => {
           </div>
 
           {/* Quick Queue */}
-          <div className="bg-gray-800 p-8 rounded-xl border border-gray-700 w-96">
+          <div className="bg-gray-800 p-5 sm:p-8 rounded-xl border border-gray-700 w-full md:w-96">
             <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
               <span className="text-3xl">⚡</span> Quick Play
             </h2>
@@ -255,11 +255,11 @@ export const Menu: React.FC<MenuProps> = ({ onGameStart }) => {
         </div>
       ) : (
         /* Lobby View */
-        <div className="bg-gray-800 p-8 rounded-xl border-2 border-cyan-700 w-full max-w-2xl">
+        <div className="bg-gray-800 p-4 sm:p-8 rounded-xl border-2 border-cyan-700 w-full max-w-2xl">
           {/* Header */}
-          <div className="flex justify-between items-center mb-8 pb-6 border-b border-gray-700">
+          <div className="flex flex-col sm:flex-row gap-4 sm:justify-between sm:items-center mb-8 pb-6 border-b border-gray-700">
             <div>
-              <h2 className="text-3xl font-bold text-white mb-2">🏠 {lobby.name}</h2>
+              <h2 className="text-2xl sm:text-3xl break-words font-bold text-white mb-2">🏠 {lobby.name}</h2>
               <p className="text-cyan-400 font-semibold">
                 {lobby.players.length} player{lobby.players.length !== 1 ? 's' : ''} in lobby
                 {isHost && <span className="ml-3 text-yellow-400">👑 You are the host</span>}
@@ -286,16 +286,16 @@ export const Menu: React.FC<MenuProps> = ({ onGameStart }) => {
                 return (
                   <div
                     key={`${p.playerId}-${index}`}
-                    className="flex justify-between items-center px-6 py-4 bg-gray-900 rounded-lg border border-gray-700"
+                    className="flex flex-col sm:flex-row gap-3 sm:justify-between sm:items-center px-4 sm:px-6 py-4 bg-gray-900 rounded-lg border border-gray-700"
                   >
-                    <div className="flex items-center gap-4">
+                    <div className="flex flex-wrap items-center gap-3 sm:gap-4 min-w-0">
                       <div className={`w-4 h-4 rounded-full ${p.ready ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`} />
-                      <span className="text-white font-semibold text-lg">{p.username}</span>
+                      <span className="text-white font-semibold text-lg break-all">{p.username}</span>
                       {isCurrentPlayer && (
                         <span className="text-xs bg-cyan-900 text-cyan-300 px-2 py-1 rounded">You</span>
                       )}
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="flex flex-wrap items-center gap-3 sm:gap-4">
                       {p.isHost && (
                         <span className="text-yellow-400 font-semibold">👑 Host</span>
                       )}

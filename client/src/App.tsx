@@ -2,6 +2,7 @@ import React, { useRef, useState, useCallback } from 'react';
 import { GameContainer, GameContainerHandle } from './components/GameContainer';
 import { Menu } from './components/Menu';
 import { HeroSelect } from './components/ChampionSelect';
+import { MobileControls } from './components/MobileControls';
 import { useGameStore } from './store/gameStore';
 import { EventBus } from './events/EventBus';
 
@@ -15,6 +16,7 @@ const GAME_SCENES = [BootScene, NetworkGameScene];
 type GamePhase = 'menu' | 'heroSelect' | 'playing';
 
 const App: React.FC = () => {
+  const touchDevice = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
   const gameRef = useRef<GameContainerHandle>(null);
   const [phase, setPhase] = useState<GamePhase>('menu');
   const [matchId, setMatchId] = useState<string>('');
@@ -59,9 +61,13 @@ const App: React.FC = () => {
   }, [matchId, matchData, startGame]);
 
   return (
-    <div className="relative w-full h-full overflow-hidden bg-gray-900">
+    <div className="relative flex min-h-dvh w-full flex-col bg-gray-900 md:h-full">
       {/* Phaser Game - Hidden until playing */}
-      <div className={`absolute inset-0 ${phase === 'playing' ? 'z-0' : '-z-10'}`}>
+      <div className={phase === 'playing'
+        ? touchDevice
+          ? 'game-frame-touch relative z-0 aspect-video w-full shrink-0'
+          : 'relative z-0 aspect-video w-full shrink-0 md:absolute md:inset-0 md:h-full md:aspect-auto'
+        : 'absolute inset-0 -z-10'}>
         <GameContainer
           ref={gameRef}
           width={1280}
@@ -69,17 +75,18 @@ const App: React.FC = () => {
           scene={GAME_SCENES}
         />
       </div>
+      {phase === 'playing' && <MobileControls touchDevice={touchDevice} />}
 
       {/* Menu - Full screen overlay */}
       {phase === 'menu' && (
-        <div className="absolute inset-0 z-10">
+        <div className="fixed inset-0 z-10 overflow-y-auto overscroll-contain">
           <Menu onGameStart={handleGameStart} />
         </div>
       )}
 
       {/* Hero Select - Full screen overlay */}
       {phase === 'heroSelect' && (
-        <div className="absolute inset-0 z-10">
+        <div className="fixed inset-0 z-10 overflow-y-auto overscroll-contain">
           <HeroSelect matchId={matchId} team={team} onComplete={handleHeroComplete} />
         </div>
       )}

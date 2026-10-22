@@ -2,6 +2,8 @@ import Phaser from 'phaser';
 import type { GameInput, MatchFound, WorldEffect, WorldPlayer, WorldSnapshot } from '@moba/shared';
 import { decodeSnapshot } from '@moba/shared/codec';
 import { network } from '../network/socket';
+import { mobileInput, resetMobileInput, takeMobileCast } from '../input/mobileInput';
+import { EFFECT_SPRITES, HERO_SPRITES, spriteUrl } from '../assets/heroSprites';
 
 const WIDTH = 1280;
 const HEIGHT = 720;
@@ -17,6 +19,9 @@ export class NetworkGameScene extends Phaser.Scene {
   private graphics!: Phaser.GameObjects.Graphics;
   private statusText!: Phaser.GameObjects.Text;
   private labels = new Map<string, Phaser.GameObjects.Text>();
+  private playerSprites = new Map<string, Phaser.GameObjects.Image>();
+  private effectImages = new Map<number, Phaser.GameObjects.Image>();
+  private lastRenderPositions = new Map<string, { x: number; y: number }>();
   private snapshots: WorldSnapshot[] = [];
   private receivedAt = 0;
   private sequence = 0;
@@ -36,6 +41,12 @@ export class NetworkGameScene extends Phaser.Scene {
     super({ key: 'NetworkGameScene' });
   }
 
+  preload(): void {
+    for (const name of [...Object.values(HERO_SPRITES), ...EFFECT_SPRITES]) {
+      this.load.image(`arena-${name}`, spriteUrl(name));
+    }
+  }
+
   init(data: MatchFound): void {
     this.matchId = data.matchId;
     this.participants = data.participants || [];
@@ -49,6 +60,10 @@ export class NetworkGameScene extends Phaser.Scene {
   }
 
   create(): void {
+    for (const name of [...Object.values(HERO_SPRITES), ...EFFECT_SPRITES]) {
+      const texture = this.textures.get(`arena-${name}`);
+      if (texture.key !== '__MISSING') texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+    }
     this.graphics = this.add.graphics();
     this.statusText = this.add.text(24, 18, 'Waiting for players...', { color: '#ffffff', fontSize: '20px' });
     this.keys = this.input.keyboard!.addKeys('W,A,S,D,SPACE') as Keys;
@@ -59,8 +74,14 @@ export class NetworkGameScene extends Phaser.Scene {
       network.off('game:snapshot', this.onSnapshot);
       network.off('match:aborted', this.onAbort);
       this.input.keyboard?.off('keydown', this.onKeyDown);
+      resetMobileInput();
       for (const label of this.labels.values()) label.destroy();
       this.labels.clear();
+      for (const sprite of this.playerSprites.values()) sprite.destroy();
+      this.playerSprites.clear();
+      for (const image of this.effectImages.values()) image.destroy();
+      this.effectImages.clear();
+      this.lastRenderPositions.clear();
       delete this.game.canvas.dataset.gameReady;
       delete this.game.canvas.dataset.serverX;
       delete this.game.canvas.dataset.serverTick;
@@ -103,13 +124,13 @@ export class NetworkGameScene extends Phaser.Scene {
 
   private sendInput(): void {
     if (this.snapshots.at(-1)?.status !== 'playing') return;
-    const cast = this.pendingCast;
+    const cast = this.pendingCast || takeMobileCast();
     this.pendingCast = undefined;
     const input: GameInput = {
       seq: ++this.sequence,
-      dx: Number(this.keys.D.isDown) - Number(this.keys.A.isDown),
-      dy: Number(this.keys.S.isDown) - Number(this.keys.W.isDown),
-      attack: this.keys.SPACE.isDown,
+      dx: Phaser.Math.Clamp(Number(this.keys.D.isDown) - Number(this.keys.A.isDown) + mobileInput.dx, -1, 1),
+      dy: Phaser.Math.Clamp(Number(this.keys.S.isDown) - Number(this.keys.W.isDown) + mobileInput.dy, -1, 1),
+      attack: this.keys.SPACE.isDown || mobileInput.attack,
       ...(cast ? { cast } : {}),
     };
     this.pending.push(input);
@@ -157,6 +178,9 @@ export class NetworkGameScene extends Phaser.Scene {
       if (!seen.has(id)) {
         label.destroy();
         this.labels.delete(id);
+        this.playerSprites.get(id)?.destroy();
+        this.playerSprites.delete(id);
+        this.lastRenderPositions.delete(id);
       }
     }
   }
@@ -181,10 +205,27 @@ export class NetworkGameScene extends Phaser.Scene {
     this.graphics.fillCircle(x, y, 26);
     this.graphics.lineStyle(3, player.team === 1 ? 0x70bcff : 0xff8888);
     this.graphics.strokeCircle(x, y, 23);
-    this.graphics.fillStyle(color);
-    if (hero?.role === 'mage' || hero?.role === 'support') this.graphics.fillCircle(x, y, 15);
-    else if (hero?.role === 'assassin') this.graphics.fillTriangle(x, y - 18, x - 18, y + 15, x + 18, y + 15);
-    else this.graphics.fillRoundedRect(x - 16, y - 16, 32, 32, 8);
+    const texture = `arena-${HERO_SPRITES[player.heroId]}`;
+    if (HERO_SPRITES[player.heroId] && this.textures.exists(texture)) {
+      let sprite = this.playerSprites.get(player.id);
+      if (!sprite) {
+        sprite = this.add.image(x, y, texture).setDepth(2);
+        this.playerSprites.set(player.id, sprite);
+      }
+      const previous = this.lastRenderPositions.get(player.id);
+      const moving = previous && Math.hypot(x - previous.x, y - previous.y) > 0.35;
+      const bob = moving ? Math.sin(this.time.now / 85) * 2 : Math.sin(this.time.now / 350) * 0.5;
+      const attacking = this.snapshots.at(-1)?.effects.some(effect => effect.casterId === player.id && effect.kind === 'attack' && this.snapshots.at(-1)!.tick - effect.tick < 4);
+      sprite.setPosition(x, y + bob);
+      sprite.setScale(attacking ? 3.4 : 3);
+      sprite.setAlpha(player.hp > 0 ? 1 : 0.45);
+      sprite.setTint(player.hp > 0 ? 0xffffff : 0x777777);
+      if (previous && Math.abs(x - previous.x) > 0.3) sprite.setFlipX(x < previous.x);
+      this.lastRenderPositions.set(player.id, { x, y });
+    } else {
+      this.graphics.fillStyle(color);
+      this.graphics.fillCircle(x, y, 16);
+    }
     this.graphics.fillStyle(0x151515);
     this.graphics.fillRect(x - 25, y - 37, 50, 6);
     this.graphics.fillRect(x - 25, y - 29, 50, 4);
@@ -202,9 +243,11 @@ export class NetworkGameScene extends Phaser.Scene {
   }
 
   private drawEffects(effects: WorldEffect[], renderTick: number): void {
+    const active = new Set<number>();
     for (const effect of effects) {
       const progress = Math.max(0, renderTick - effect.tick) / 18;
       if (progress > 1) continue;
+      active.add(effect.id);
       const color = effect.kind === 'heal' || effect.kind === 'revive' ? 0x5eff9b
         : effect.kind === 'shield' ? 0x6acfff
           : effect.kind === 'meteor' || effect.kind === 'execute' ? 0xff6644 : 0xffe27a;
@@ -213,6 +256,33 @@ export class NetworkGameScene extends Phaser.Scene {
       if (effect.kind === 'dash') {
         this.graphics.fillStyle(color, 0.5 * (1 - progress));
         this.graphics.fillCircle(effect.x, effect.y, 24 + progress * 20);
+      }
+      const caster = this.snapshots.at(-1)?.players.find(player => player.id === effect.casterId);
+      const rangedAttack = effect.kind === 'attack' && ['mage', 'support', 'marksman'].includes(caster?.heroId || '');
+      const asset = effect.kind === 'attack'
+        ? caster?.heroId === 'marksman' ? 'arrow' : rangedAttack ? 'spark' : 'slash'
+        : effect.kind === 'meteor' || effect.kind === 'execute' ? 'flame'
+          : effect.kind === 'heal' || effect.kind === 'revive' ? 'heal'
+            : effect.kind === 'strike' ? 'slash' : 'spark';
+      const key = `arena-${asset}`;
+      if (!this.textures.exists(key)) continue;
+      let image = this.effectImages.get(effect.id);
+      if (!image) {
+        image = this.add.image(effect.x, effect.y, key).setDepth(3);
+        this.effectImages.set(effect.id, image);
+      }
+      const travel = rangedAttack && caster ? Math.min(1, progress / 0.35) : 1;
+      image.setPosition(caster && rangedAttack ? Phaser.Math.Linear(caster.x, effect.x, travel) : effect.x,
+        caster && rangedAttack ? Phaser.Math.Linear(caster.y, effect.y, travel) : effect.y);
+      image.setVisible(!rangedAttack || progress < 0.35);
+      image.setScale((effect.kind === 'meteor' ? 3.2 : 2.3) * (1 + progress * 0.5));
+      image.setAlpha(1 - progress);
+      image.setRotation(rangedAttack && caster ? Math.atan2(effect.y - caster.y, effect.x - caster.x) + Math.PI / 2 : progress * 2);
+    }
+    for (const [id, image] of this.effectImages) {
+      if (!active.has(id)) {
+        image.destroy();
+        this.effectImages.delete(id);
       }
     }
   }

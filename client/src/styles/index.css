@@ -1,3 +1,10 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@media (orientation: landscape) {
+  .game-frame-touch {
+    height: 55dvh;
+    aspect-ratio: auto;
+  }
+}

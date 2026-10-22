@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { network } from '../network/socket';
 import { EventBus } from '../events/EventBus';
+import { HERO_SPRITES, spriteUrl } from '../assets/heroSprites';
 
 export interface Hero {
   id: string;
@@ -138,10 +139,10 @@ export const HeroSelect: React.FC<HeroSelectProps> = ({ matchId, team, onComplet
   }
 
   return (
-    <div className="h-screen bg-gray-900 flex flex-col overflow-hidden">
+    <div className="min-h-full bg-gray-900 flex flex-col md:h-full md:overflow-hidden">
       {/* Header - Fixed */}
-      <div className="bg-gray-800 border-b border-gray-700 px-8 py-4 flex-shrink-0">
-        <div className="max-w-[1600px] mx-auto flex justify-between items-center">
+      <div className="bg-gray-800 border-b border-gray-700 px-4 sm:px-8 py-4 flex-shrink-0">
+        <div className="max-w-[1600px] mx-auto flex flex-wrap gap-3 justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold text-cyan-400">Hero Select</h1>
             <p className="text-gray-400 text-sm mt-1">{status}</p>
@@ -153,14 +154,14 @@ export const HeroSelect: React.FC<HeroSelectProps> = ({ matchId, team, onComplet
       </div>
 
       {/* Filters - Fixed */}
-      <div className="bg-gray-900 px-8 py-4 border-b border-gray-700 flex-shrink-0">
-        <div className="max-w-[1600px] mx-auto flex gap-4">
+      <div className="bg-gray-900 px-4 sm:px-8 py-4 border-b border-gray-700 flex-shrink-0">
+        <div className="max-w-[1600px] mx-auto flex flex-col sm:flex-row gap-3 sm:gap-4">
           <input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Search heroes..."
-            className="flex-1 px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-cyan-400"
+            className="min-w-0 flex-1 px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-cyan-400"
           />
           <select
             value={filterRole}
@@ -176,16 +177,16 @@ export const HeroSelect: React.FC<HeroSelectProps> = ({ matchId, team, onComplet
       </div>
 
       {/* Main Content - Scrollable */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-[1600px] mx-auto p-8">
+      <div className="md:min-h-0 md:flex-1 md:overflow-y-auto">
+        <div className="max-w-[1600px] mx-auto p-4 sm:p-8">
           {/* Heroes Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 mb-8">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 mb-4 sm:mb-8">
             {filteredHeroes.map((hero) => (
               <button
                 key={hero.id}
                 onClick={() => setSelectedHero(hero)}
                 className={`
-                  p-4 rounded-xl border-2 transition-all text-left
+                  p-2 sm:p-4 rounded-xl border-2 transition-all text-left
                   ${selectedHero?.id === hero.id 
                     ? 'border-cyan-400 bg-cyan-900/30 scale-105 shadow-lg shadow-cyan-500/20' 
                     : `border-gray-700 bg-gray-800 hover:border-gray-500`}
@@ -196,7 +197,9 @@ export const HeroSelect: React.FC<HeroSelectProps> = ({ matchId, team, onComplet
                   className="w-full aspect-square rounded-lg mb-3 flex items-center justify-center"
                   style={{ backgroundColor: `#${hero.color.toString(16).padStart(6, '0')}` }}
                 >
-                  <span className="text-white text-4xl font-bold">{hero.name[0]}</span>
+                  {HERO_SPRITES[hero.id]
+                    ? <img src={spriteUrl(HERO_SPRITES[hero.id])} alt="" className="h-16 w-16 max-w-full object-contain [image-rendering:pixelated]" />
+                    : <span className="text-white text-4xl font-bold">{hero.name[0]}</span>}
                 </div>
                 <h3 className="text-white font-bold mb-1">{hero.name}</h3>
                 <p className="text-gray-400 text-sm capitalize">{hero.role}</p>
@@ -214,23 +217,25 @@ export const HeroSelect: React.FC<HeroSelectProps> = ({ matchId, team, onComplet
 
       {/* Hero Details Panel - Fixed at bottom */}
       {selectedHero && (
-        <div className="bg-gray-800 border-t border-gray-700 p-6 flex-shrink-0">
-          <div className="max-w-[1600px] mx-auto flex gap-6 items-center">
+        <div className="bg-gray-800 border-t border-gray-700 p-4 sm:p-6 flex-shrink-0">
+          <div className="max-w-[1600px] mx-auto flex flex-wrap gap-4 sm:gap-6 items-center">
             {/* Hero Portrait */}
             <div 
-              className="w-24 h-24 rounded-xl flex items-center justify-center text-white text-5xl font-bold flex-shrink-0"
+              className="hidden sm:flex w-24 h-24 rounded-xl items-center justify-center text-white text-5xl font-bold flex-shrink-0"
               style={{ backgroundColor: `#${selectedHero.color.toString(16).padStart(6, '0')}` }}
             >
-              {selectedHero.name[0]}
+              {HERO_SPRITES[selectedHero.id]
+                ? <img src={spriteUrl(HERO_SPRITES[selectedHero.id])} alt="" className="h-20 w-20 object-contain [image-rendering:pixelated]" />
+                : selectedHero.name[0]}
             </div>
 
             {/* Info */}
-            <div className="flex-1">
+            <div className="min-w-0 flex-1">
               <h2 className="text-2xl font-bold text-white">{selectedHero.name}</h2>
               <p className="text-gray-400 capitalize">{selectedHero.role}</p>
               
               {/* Quick Stats */}
-              <div className="flex gap-6 mt-2 text-sm">
+              <div className="flex flex-wrap gap-x-4 gap-y-1 sm:gap-6 mt-2 text-sm">
                 <span className="text-green-400">HP: {selectedHero.hp}</span>
                 <span className="text-blue-400">Mana: {selectedHero.mana}</span>
                 <span className="text-red-400">ATK: {selectedHero.attack}</span>
@@ -250,7 +255,7 @@ export const HeroSelect: React.FC<HeroSelectProps> = ({ matchId, team, onComplet
               onClick={handleLockHero}
               disabled={isLocked}
               className={`
-                px-8 py-4 rounded-xl font-bold text-xl transition-all flex-shrink-0
+                w-full sm:w-auto px-8 py-3 sm:py-4 rounded-xl font-bold text-lg sm:text-xl transition-all flex-shrink-0
                 ${isLocked 
                   ? 'bg-green-700 cursor-default' 
                   : 'bg-green-600 hover:bg-green-500 hover:scale-105'}
