@@ -73,6 +73,7 @@ export class NetworkGameScene extends Phaser.Scene {
     this.drawMap();
     this.statusText = this.add.text(24, 18, 'Waiting for players...', { color: '#ffffff', fontSize: '18px', backgroundColor: '#10202dcc', padding: { x: 10, y: 6 } }).setScrollFactor(0).setDepth(10);
     this.cameras.main.setBounds(0, 0, MAP_WIDTH, MAP_HEIGHT);
+    this.cameras.main.setZoom(navigator.maxTouchPoints > 0 ? 1.5 : 1);
     this.keys = this.input.keyboard!.addKeys('W,A,S,D,SPACE') as Keys;
     this.input.keyboard!.on('keydown', this.onKeyDown);
     network.on('game:snapshot', this.onSnapshot);
