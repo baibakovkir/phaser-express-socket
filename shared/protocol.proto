@@ -8,6 +8,7 @@ message Input {
   sint32 dy = 3;
   bool attack = 4;
   string cast = 5;
+  uint32 target_unit = 6;
 }
 
 message Effect {
@@ -45,6 +46,16 @@ message PlayerState {
   uint32 deaths = 10;
   uint32 last_processed_seq = 11;
   string hero_id = 12;
+  uint32 gold = 13;
+  uint32 gold_earned = 14;
+  uint32 last_hits = 15;
+  uint32 assists = 16;
+  repeated InventorySlot inventory = 17;
+}
+
+message InventorySlot {
+  uint32 item_index = 1;
+  uint32 ready_tick = 2;
 }
 
 message Snapshot {

@@ -12,6 +12,7 @@ export function encodeInput(input) {
     dy: input.dy,
     attack: input.attack,
     cast: input.cast || '',
+    targetUnit: input.targetUnitId || 0,
   }).finish();
 }
 
@@ -23,6 +24,7 @@ export function decodeInput(data) {
     dy: message.dy,
     attack: message.attack,
     ...(message.cast ? { cast: message.cast } : {}),
+    ...(message.targetUnit ? { targetUnitId: message.targetUnit } : {}),
   };
 }
 
@@ -45,6 +47,11 @@ export function encodeSnapshot(snapshot, playerIds) {
       deaths: player.deaths,
       lastProcessedSeq: player.lastProcessedSeq,
       heroId: player.heroId,
+      gold: player.gold,
+      goldEarned: player.goldEarned,
+      lastHits: player.lastHits,
+      assists: player.assists,
+      inventory: player.inventory,
     })),
     effects: snapshot.effects.map(effect => ({
       id: effect.id,
@@ -94,6 +101,11 @@ export function decodeSnapshot(data, matchId, participants) {
         speed: player.speed,
         kills: player.kills,
         deaths: player.deaths,
+        gold: player.gold,
+        goldEarned: player.goldEarned,
+        lastHits: player.lastHits,
+        assists: player.assists,
+        inventory: player.inventory.map(slot => ({ itemIndex: slot.itemIndex, readyTick: slot.readyTick })),
         lastProcessedSeq: player.lastProcessedSeq,
       };
     }),

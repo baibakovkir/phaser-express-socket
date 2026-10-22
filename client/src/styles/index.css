@@ -2,9 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
-@media (orientation: landscape) {
-  .game-frame-touch {
-    height: 55dvh;
-    aspect-ratio: auto;
+.touch-match-shell {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+@media (orientation: portrait) {
+  .touch-match-shell {
+    inset: auto;
+    top: 0;
+    left: 100vw;
+    width: 100dvh;
+    height: 100vw;
+    transform-origin: top left;
+    transform: rotate(90deg);
   }
 }

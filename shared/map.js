@@ -7,34 +7,57 @@ export const BOSS_SPAWN_TICKS = 120 * TICKS_PER_SECOND;
 
 export const BASES = {
   1: { x: 260, y: 1710 },
-  2: { x: 2940, y: 290 },
+  2: { x: 2940, y: 1710 },
 };
 
-// Each route goes from blue to red. The shared wilderness lies between them.
-export const LANES = [
-  { id: 1, name: 'Temple Path', points: [
-    { x: 320, y: 1640 }, { x: 430, y: 1210 }, { x: 960, y: 760 },
-    { x: 1710, y: 530 }, { x: 2390, y: 420 }, { x: 2880, y: 360 },
+function smoothPath(points, steps = 12) {
+  const path = [];
+  for (let index = 0; index < points.length - 1; index++) {
+    const before = points[Math.max(0, index - 1)];
+    const start = points[index];
+    const end = points[index + 1];
+    const after = points[Math.min(points.length - 1, index + 2)];
+    for (let step = 0; step < steps; step++) {
+      const t = step / steps;
+      const curve = (a, b, c, d) => 0.5 * (
+        2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t * t +
+        (-a + 3 * b - 3 * c + d) * t * t * t
+      );
+      path.push({ x: curve(before.x, start.x, end.x, after.x), y: curve(before.y, start.y, end.y, after.y) });
+    }
+  }
+  path.push(points.at(-1));
+  return path;
+}
+
+const laneRoutes = [
+  { id: 1, name: 'Mid', points: [
+    { x: 320, y: 1640 }, { x: 560, y: 1320 }, { x: 1030, y: 1120 },
+    { x: 1600, y: 1070 }, { x: 2170, y: 1120 }, { x: 2640, y: 1320 },
+    { x: 2880, y: 1640 },
   ] },
-  { id: 2, name: 'River Path', points: [
-    { x: 320, y: 1640 }, { x: 820, y: 1650 }, { x: 1490, y: 1530 },
-    { x: 2150, y: 1190 }, { x: 2680, y: 750 }, { x: 2880, y: 360 },
+  { id: 2, name: 'Bottom', points: [
+    { x: 320, y: 1640 }, { x: 790, y: 1730 }, { x: 1340, y: 1770 },
+    { x: 1860, y: 1770 }, { x: 2410, y: 1730 }, { x: 2880, y: 1640 },
   ] },
 ];
 
+export const LANES = laneRoutes.map(lane => ({ ...lane, path: smoothPath(lane.points) }));
+
 export const CAMPS = [
-  { id: 1, x: 980, y: 1140 },
-  { id: 2, x: 1370, y: 1150 },
-  { id: 3, x: 1830, y: 850 },
-  { id: 4, x: 2230, y: 850 },
+  { id: 1, x: 760, y: 610 },
+  { id: 2, x: 1170, y: 390 },
+  { id: 3, x: 1610, y: 700 },
+  { id: 4, x: 2040, y: 380 },
+  { id: 5, x: 2470, y: 610 },
 ];
 
 export const SHRINES = [
-  { x: 1250, y: 990 },
-  { x: 1970, y: 1050 },
+  { x: 1080, y: 840 },
+  { x: 2120, y: 840 },
 ];
 
-export const BOSS = { x: 1600, y: 1000 };
+export const BOSS = { x: 1600, y: 350 };
 
 export function nextSpawnSecond(tick, intervalTicks) {
   return (Math.floor(tick / intervalTicks) + 1) * intervalTicks / TICKS_PER_SECOND;

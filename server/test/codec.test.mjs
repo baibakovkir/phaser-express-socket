@@ -11,6 +11,8 @@ test('protobuf round trip keeps authoritative fields in a smaller snapshot', () 
     id: entry.playerId, username: entry.username, team: entry.team, heroId: 'mage',
     x, y: 250, hp: 320, maxHp: 350, mana: 120, maxMana: 150,
     speed: 330, kills: 1, deaths: 0, lastProcessedSeq: 42,
+    assists: 1, gold: 785, goldEarned: 535, lastHits: 4,
+    inventory: [{ itemIndex: 3, readyTick: 180 }],
   });
   const snapshot = {
     matchId: 'match-uuid', tick: 128, status: 'playing',
@@ -24,6 +26,6 @@ test('protobuf round trip keeps authoritative fields in a smaller snapshot', () 
   const bytes = encodeSnapshot(snapshot, participants.map(item => item.playerId));
   assert.ok(bytes.byteLength < Buffer.byteLength(JSON.stringify(snapshot)) / 2);
   assert.deepEqual(decodeSnapshot(bytes, snapshot.matchId, participants), snapshot);
-  const input = { seq: 8, dx: -1, dy: 0, attack: true, cast: '1' };
+  const input = { seq: 8, dx: -1, dy: 0, attack: true, cast: '1', targetUnitId: 42 };
   assert.deepEqual(decodeInput(encodeInput(input)), input);
 });

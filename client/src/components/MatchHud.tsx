@@ -8,10 +8,16 @@ function clock(seconds: number): string {
 
 export function MatchHud() {
   const [state, setState] = useState({ tick: 0, bossAlive: false });
+  const [target, setTarget] = useState('');
   useEffect(() => {
     const update = (tick: number, bossAlive: boolean) => setState({ tick, bossAlive });
+    const updateTarget = (label: string) => setTarget(label);
     EventBus.on('game:clock', update);
-    return () => EventBus.off('game:clock', update);
+    EventBus.on('game:target', updateTarget);
+    return () => {
+      EventBus.off('game:clock', update);
+      EventBus.off('game:target', updateTarget);
+    };
   }, []);
 
   const seconds = Math.floor(state.tick / TICKS_PER_SECOND);
@@ -21,11 +27,12 @@ export function MatchHud() {
     : state.bossAlive ? 'alive' : 'respawning';
 
   return (
-    <div aria-label="Match timer" className="z-10 flex shrink-0 flex-wrap items-center justify-center gap-x-4 gap-y-1 border-b border-amber-600/50 bg-slate-950/95 px-3 py-2 text-center text-xs font-semibold text-amber-100 md:absolute md:left-1/2 md:top-3 md:-translate-x-1/2 md:rounded-lg md:border">
+    <div aria-label="Match timer" className="pointer-events-none absolute left-1/2 top-2 z-10 flex max-w-[65%] -translate-x-1/2 flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-lg border border-amber-600/50 bg-slate-950/90 px-3 py-1 text-center text-xs font-semibold text-amber-100">
       <strong className="text-base text-white">{clock(seconds)}</strong>
       <span>Lane {clock(lane)}</span>
       <span>Jungle {clock(jungle)}</span>
       <span>Oni {boss}</span>
+      {target && <span className="text-amber-300">Target: {target}</span>}
     </div>
   );
 }

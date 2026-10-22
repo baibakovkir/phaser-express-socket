@@ -4,6 +4,7 @@ import { Menu } from './components/Menu';
 import { HeroSelect } from './components/ChampionSelect';
 import { MobileControls } from './components/MobileControls';
 import { MatchHud } from './components/MatchHud';
+import { EconomyOverlay } from './components/EconomyOverlay';
 import { useGameStore } from './store/gameStore';
 import { EventBus } from './events/EventBus';
 
@@ -62,13 +63,13 @@ const App: React.FC = () => {
   }, [matchId, matchData, startGame]);
 
   return (
-    <div className="relative flex min-h-dvh w-full flex-col bg-gray-900 md:h-full">
+    <div className={phase === 'playing' && touchDevice
+      ? 'touch-match-shell bg-gray-900'
+      : 'relative flex min-h-dvh w-full flex-col bg-gray-900 md:h-full'}>
       {phase === 'playing' && <MatchHud />}
       {/* Phaser Game - Hidden until playing */}
       <div className={phase === 'playing'
-        ? touchDevice
-          ? 'game-frame-touch relative z-0 aspect-video w-full shrink-0'
-          : 'relative z-0 aspect-video w-full shrink-0 md:absolute md:inset-0 md:h-full md:aspect-auto'
+        ? 'absolute inset-0 z-0 h-full w-full'
         : 'absolute inset-0 -z-10'}>
         <GameContainer
           ref={gameRef}
@@ -77,7 +78,8 @@ const App: React.FC = () => {
           scene={GAME_SCENES}
         />
       </div>
-      {phase === 'playing' && <MobileControls touchDevice={touchDevice} />}
+      {phase === 'playing' && touchDevice && <MobileControls />}
+      {phase === 'playing' && matchData && <EconomyOverlay matchId={matchId} items={matchData.items} />}
 
       {/* Menu - Full screen overlay */}
       {phase === 'menu' && (

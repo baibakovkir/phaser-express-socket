@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent } from 'react';
 import { mobileInput, queueMobileCast, resetMobileInput } from '../input/mobileInput';
+import { EventBus } from '../events/EventBus';
 
 const ABILITIES = ['Q', '1', '2', '3'] as const;
-const STICK_RADIUS = 48;
+const STICK_RADIUS = 38;
 
-export function MobileControls({ touchDevice }: { touchDevice: boolean }) {
+export function MobileControls() {
   const activePointer = useRef<number | null>(null);
   const [stick, setStick] = useState({ x: 0, y: 0 });
 
@@ -25,8 +26,11 @@ export function MobileControls({ touchDevice }: { touchDevice: boolean }) {
   const moveStick = (event: PointerEvent<HTMLDivElement>) => {
     if (activePointer.current !== event.pointerId) return;
     const bounds = event.currentTarget.getBoundingClientRect();
-    const dx = event.clientX - (bounds.left + bounds.width / 2);
-    const dy = event.clientY - (bounds.top + bounds.height / 2);
+    const portrait = window.matchMedia('(orientation: portrait)').matches;
+    const screenX = event.clientX - (bounds.left + bounds.width / 2);
+    const screenY = event.clientY - (bounds.top + bounds.height / 2);
+    const dx = portrait ? screenY : screenX;
+    const dy = portrait ? -screenX : screenY;
     const scale = Math.min(1, STICK_RADIUS / (Math.hypot(dx, dy) || 1));
     const x = dx * scale;
     const y = dy * scale;
@@ -48,13 +52,12 @@ export function MobileControls({ touchDevice }: { touchDevice: boolean }) {
   };
 
   return (
-    <section aria-label="Touch game controls" className={`flex-1 w-full bg-gray-900 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-white ${touchDevice ? '' : 'md:hidden'}`}>
-      <div className="mx-auto flex max-w-xl flex-wrap items-center justify-center gap-3 sm:justify-between">
+    <section aria-label="Touch game controls" className="pointer-events-none absolute inset-0 z-20 text-white">
         <div
           role="group"
           aria-label="Move joystick"
           data-testid="move-joystick"
-          className="relative h-36 w-36 shrink-0 rounded-full border-2 border-cyan-500 bg-gray-800 touch-none select-none"
+          className="pointer-events-auto absolute bottom-4 left-4 h-28 w-28 rounded-full border-2 border-cyan-400 bg-slate-950/70 shadow-lg touch-none select-none"
           onPointerDown={event => {
             if (activePointer.current !== null) return;
             activePointer.current = event.pointerId;
@@ -66,16 +69,16 @@ export function MobileControls({ touchDevice }: { touchDevice: boolean }) {
           onPointerCancel={releaseStick}
           onLostPointerCapture={releaseStick}
         >
-          <div className="absolute left-1/2 top-1/2 h-14 w-14 rounded-full border border-cyan-300 bg-cyan-600/80 pointer-events-none" style={{ transform: `translate(calc(-50% + ${stick.x}px), calc(-50% + ${stick.y}px))` }} />
+          <div className="pointer-events-none absolute left-1/2 top-1/2 h-12 w-12 rounded-full border border-cyan-200 bg-cyan-600/80" style={{ transform: `translate(calc(-50% + ${stick.x}px), calc(-50% + ${stick.y}px))` }} />
         </div>
-        <div className="flex min-w-0 flex-col items-end gap-3">
-          <div className="grid grid-cols-4 gap-2">
+        <div className="pointer-events-auto absolute bottom-4 right-4 flex flex-col items-end gap-2">
+          <div className="grid grid-cols-4 gap-1.5">
             {ABILITIES.map(ability => (
               <button
                 key={ability}
                 type="button"
                 aria-label={`Cast ${ability}`}
-                className="h-12 w-11 rounded-lg border border-purple-400 bg-purple-800 font-bold touch-none select-none active:bg-purple-600"
+                className="h-11 w-11 rounded-lg border border-purple-300 bg-purple-900/85 font-bold shadow-lg touch-none select-none active:bg-purple-600"
                 onPointerDown={() => queueMobileCast(ability)}
               >
                 {ability}
@@ -84,8 +87,16 @@ export function MobileControls({ touchDevice }: { touchDevice: boolean }) {
           </div>
           <button
             type="button"
+            aria-label="Select next target"
+            className="h-10 min-w-24 rounded-lg border border-amber-300 bg-slate-950/80 px-3 text-xs font-bold touch-none select-none"
+            onPointerDown={() => EventBus.emit('ui:cycle-target')}
+          >
+            Target
+          </button>
+          <button
+            type="button"
             aria-label="Attack"
-            className="h-16 min-w-24 rounded-full border-2 border-red-400 bg-red-700 px-4 font-bold touch-none select-none active:bg-red-500"
+            className="h-12 min-w-24 rounded-full border-2 border-red-300 bg-red-800/90 px-4 font-bold shadow-lg touch-none select-none active:bg-red-500"
             onPointerDown={event => {
               event.currentTarget.setPointerCapture(event.pointerId);
               mobileInput.attack = true;
@@ -97,7 +108,6 @@ export function MobileControls({ touchDevice }: { touchDevice: boolean }) {
             Attack
           </button>
         </div>
-      </div>
     </section>
   );
 }

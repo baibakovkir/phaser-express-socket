@@ -1,4 +1,5 @@
 import { Events } from 'phaser';
+import type { WorldPlayer } from '@moba/shared';
 
 export interface GameEvents {
   'player:hp': (hp: number, maxHp: number) => void;
@@ -13,8 +14,11 @@ export interface GameEvents {
   'game:resumed': () => void;
   'game:over': (winner: string | null) => void;
   'game:clock': (tick: number, bossAlive: boolean) => void;
+  'game:target': (label: string) => void;
+  'game:economy': (player: WorldPlayer, tick: number, shopAvailable: boolean) => void;
   'ui:ability-cast': (abilityName: string, targetPosition?: { x: number; y: number }) => void;
   'ui:move-command': (x: number, y: number) => void;
+  'ui:cycle-target': () => void;
   'loader:progress': (current: number, total: number, percent: number) => void;
   'loader:filecomplete': (key: string, type: string, file: { key: string }) => void;
   'loader:complete': () => void;

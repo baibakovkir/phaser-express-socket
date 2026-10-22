@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Worker } from 'node:worker_threads';
 import type { Server } from 'socket.io';
-import type { GameInput, MatchFound, MatchParticipant, WorldSnapshot } from '@moba/shared';
+import type { GameInput, ItemDefinition, MatchFound, MatchParticipant, WorldSnapshot } from '@moba/shared';
 import { encodeSnapshot } from '@moba/shared/codec';
 import { prisma } from '../lib/prisma.js';
 import { redis } from '../lib/redis.js';
@@ -20,6 +20,7 @@ interface RunningMatch {
   selected: Map<string, string>;
   finished: boolean;
   inputBudget: Map<string, { window: number; count: number }>;
+  pendingCommands: Map<number, (result: { success: boolean; error?: string }) => void>;
   selectionTimer: NodeJS.Timeout;
   durationTimer: NodeJS.Timeout;
   disconnectedTimer?: NodeJS.Timeout;
@@ -29,6 +30,7 @@ class MatchManager {
   private io?: Server;
   private matches = new Map<string, RunningMatch>();
   private playerMatches = new Map<string, string>();
+  private nextCommandId = 1;
 
   init(io: Server): void {
     this.io = io;
@@ -44,6 +46,14 @@ class MatchManager {
     const catalog = await prisma.hero.findMany({
       include: { abilities: true },
     });
+    const itemRows = await prisma.item.findMany({ include: { components: true }, orderBy: { id: 'asc' } });
+    const items: ItemDefinition[] = itemRows.map((item, index) => ({
+      index: index + 1, id: item.id, name: item.name, description: item.description,
+      price: item.price, stats: item.stats as ItemDefinition['stats'],
+      components: item.components.map(part => part.componentId),
+      ...(item.activeKind === 'heal' || item.activeKind === 'shield' ? { activeKind: item.activeKind } : {}),
+      cooldown: item.cooldown,
+    }));
     if (!isValid() || entrants.some(p => this.playerMatches.has(p.playerId) || !this.io?.sockets.sockets.get(p.socketId)?.connected)) {
       return { success: false, error: 'A player left before the match started' };
     }
@@ -52,6 +62,7 @@ class MatchManager {
       maxHp: hero.baseHp,
       maxMana: hero.baseMana,
       manaRegen: hero.manaRegen,
+      hpRegen: hero.hpRegen,
       speed: hero.baseSpeed,
       attack: hero.baseAttack,
       abilities: hero.abilities.filter(ability => ['Q', '1', '2', '3'].includes(ability.key)).map(ability => ({
@@ -72,7 +83,7 @@ class MatchManager {
     }));
     const source = import.meta.url.endsWith('.ts');
     const worker = new Worker(new URL(`./match.worker.${source ? 'ts' : 'js'}`, import.meta.url), {
-      workerData: { matchId, participants, heroes },
+      workerData: { matchId, participants, heroes, items },
       execArgv: source ? ['--import', 'tsx'] : [],
     });
     const match: RunningMatch = {
@@ -82,6 +93,7 @@ class MatchManager {
       selected: new Map(),
       finished: false,
       inputBudget: new Map(),
+      pendingCommands: new Map(),
       selectionTimer: setTimeout(() => this.abort(matchId, 'Hero selection timed out'), 120_000),
       durationTimer: setTimeout(() => this.abort(matchId, 'Match time limit reached'), 30 * 60_000),
     };
@@ -92,7 +104,12 @@ class MatchManager {
       this.playerMatches.set(entrant.playerId, matchId);
       this.io.sockets.sockets.get(entrant.socketId)?.join(matchId);
     }
-    worker.on('message', (message: { type: 'snapshot'; snapshot: WorldSnapshot }) => {
+    worker.on('message', (message: { type: 'snapshot'; snapshot: WorldSnapshot } | { type: 'command:result'; id: number; result: { success: boolean; error?: string } }) => {
+      if (message.type === 'command:result') {
+        match.pendingCommands.get(message.id)?.(message.result);
+        match.pendingCommands.delete(message.id);
+        return;
+      }
       if (message.type !== 'snapshot') return;
       this.io?.to(matchId).emit('game:snapshot', encodeSnapshot(message.snapshot, participants.map(item => item.playerId)));
       if (message.snapshot.tick > 0 && message.snapshot.tick % 30 === 0) {
@@ -125,6 +142,7 @@ class MatchManager {
       matchId,
       participants,
       heroes: catalog.map(hero => ({ id: hero.id, name: hero.name, role: hero.role.toLowerCase(), color: colors[hero.role] || 0xffffff })),
+      items,
     };
     this.io.to(matchId).emit('match:found', notice);
     return { success: true, matchId };
@@ -145,12 +163,30 @@ class MatchManager {
     if (!input || !Number.isSafeInteger(input.seq) || input.seq < 1 ||
         !Number.isFinite(input.dx) || !Number.isFinite(input.dy) ||
         Math.abs(input.dx) > 1 || Math.abs(input.dy) > 1 || typeof input.attack !== 'boolean' ||
-        (input.cast !== undefined && !['Q', '1', '2', '3'].includes(input.cast))) return;
+        (input.cast !== undefined && !['Q', '1', '2', '3'].includes(input.cast)) ||
+        (input.targetUnitId !== undefined && (!Number.isSafeInteger(input.targetUnitId) || input.targetUnitId < 1))) return;
     const now = Date.now();
     const budget = match.inputBudget.get(playerId);
     if (!budget || now - budget.window >= 1000) match.inputBudget.set(playerId, { window: now, count: 1 });
     else if (++budget.count > 60) return;
     match.worker.postMessage({ type: 'input', playerId, input });
+  }
+
+  command(playerId: string, socketId: string, matchId: string, action: 'buy' | 'use', itemId: string): Promise<{ success: boolean; error?: string }> {
+    const match = this.matches.get(matchId);
+    if (!match || match.finished || match.roster.get(playerId) !== socketId || !/^[a-z_]{1,40}$/.test(itemId)) {
+      return Promise.resolve({ success: false, error: 'Invalid match or item' });
+    }
+    if (match.pendingCommands.size >= 64) return Promise.resolve({ success: false, error: 'Too many pending actions' });
+    const id = this.nextCommandId++;
+    return new Promise(resolve => {
+      const timeout = setTimeout(() => {
+        match.pendingCommands.delete(id);
+        resolve({ success: false, error: 'Item action timed out' });
+      }, 3000);
+      match.pendingCommands.set(id, result => { clearTimeout(timeout); resolve(result); });
+      match.worker.postMessage({ type: 'command', id, playerId, action, itemId });
+    });
   }
 
   disconnect(playerId: string): void {
@@ -187,6 +223,9 @@ class MatchManager {
               heroId: player.heroId,
               kills: player.kills,
               deaths: player.deaths,
+              assists: player.assists,
+              goldEarned: player.goldEarned,
+              lastHits: player.lastHits,
             })),
           },
         },
@@ -199,6 +238,8 @@ class MatchManager {
   private close(matchId: string): void {
     const match = this.matches.get(matchId);
     if (!match) return;
+    for (const resolve of match.pendingCommands.values()) resolve({ success: false, error: 'Match ended' });
+    match.pendingCommands.clear();
     this.matches.delete(matchId);
     clearTimeout(match.selectionTimer);
     clearTimeout(match.durationTimer);

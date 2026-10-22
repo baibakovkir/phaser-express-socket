@@ -27,6 +27,7 @@ export const moba = $root.moba = (() => {
          * @property {number|null} [dy] Input dy
          * @property {boolean|null} [attack] Input attack
          * @property {string|null} [cast] Input cast
+         * @property {number|null} [targetUnit] Input targetUnit
          */
 
         /**
@@ -85,6 +86,14 @@ export const moba = $root.moba = (() => {
         Input.prototype.cast = "";
 
         /**
+         * Input targetUnit.
+         * @member {number} targetUnit
+         * @memberof moba.Input
+         * @instance
+         */
+        Input.prototype.targetUnit = 0;
+
+        /**
          * Creates a new Input instance using the specified properties.
          * @function create
          * @memberof moba.Input
@@ -122,6 +131,8 @@ export const moba = $root.moba = (() => {
                 writer.uint32(/* id 4, wireType 0 =*/32).bool(message.attack);
             if (message.cast != null && Object.hasOwnProperty.call(message, "cast"))
                 writer.uint32(/* id 5, wireType 2 =*/42).string(message.cast);
+            if (message.targetUnit != null && Object.hasOwnProperty.call(message, "targetUnit"))
+                writer.uint32(/* id 6, wireType 0 =*/48).uint32(message.targetUnit);
             return writer;
         };
 
@@ -192,6 +203,10 @@ export const moba = $root.moba = (() => {
                         message.cast = reader.string();
                         break;
                     }
+                case 6: {
+                        message.targetUnit = reader.uint32();
+                        break;
+                    }
                 default:
                     reader.skipType(tag & 7, long);
                     break;
@@ -251,6 +266,9 @@ export const moba = $root.moba = (() => {
             if (message.cast != null && Object.hasOwnProperty.call(message, "cast"))
                 if (!$util.isString(message.cast))
                     return "cast: string expected";
+            if (message.targetUnit != null && Object.hasOwnProperty.call(message, "targetUnit"))
+                if (!$util.isInteger(message.targetUnit))
+                    return "targetUnit: integer expected";
             return null;
         };
 
@@ -282,6 +300,8 @@ export const moba = $root.moba = (() => {
                 message.attack = Boolean(object.attack);
             if (object.cast != null)
                 message.cast = String(object.cast);
+            if (object.targetUnit != null)
+                message.targetUnit = object.targetUnit >>> 0;
             return message;
         };
 
@@ -308,6 +328,7 @@ export const moba = $root.moba = (() => {
                 object.dy = 0;
                 object.attack = false;
                 object.cast = "";
+                object.targetUnit = 0;
             }
             if (message.seq != null && Object.hasOwnProperty.call(message, "seq"))
                 object.seq = message.seq;
@@ -319,6 +340,8 @@ export const moba = $root.moba = (() => {
                 object.attack = message.attack;
             if (message.cast != null && Object.hasOwnProperty.call(message, "cast"))
                 object.cast = message.cast;
+            if (message.targetUnit != null && Object.hasOwnProperty.call(message, "targetUnit"))
+                object.targetUnit = message.targetUnit;
             return object;
         };
 
@@ -1177,6 +1200,11 @@ export const moba = $root.moba = (() => {
          * @property {number|null} [deaths] PlayerState deaths
          * @property {number|null} [lastProcessedSeq] PlayerState lastProcessedSeq
          * @property {string|null} [heroId] PlayerState heroId
+         * @property {number|null} [gold] PlayerState gold
+         * @property {number|null} [goldEarned] PlayerState goldEarned
+         * @property {number|null} [lastHits] PlayerState lastHits
+         * @property {number|null} [assists] PlayerState assists
+         * @property {Array.<moba.IInventorySlot>|null} [inventory] PlayerState inventory
          */
 
         /**
@@ -1188,6 +1216,7 @@ export const moba = $root.moba = (() => {
          * @param {moba.IPlayerState=} [properties] Properties to set
          */
         function PlayerState(properties) {
+            this.inventory = [];
             if (properties)
                 for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                     if (properties[keys[i]] != null && keys[i] !== "__proto__")
@@ -1291,6 +1320,46 @@ export const moba = $root.moba = (() => {
         PlayerState.prototype.heroId = "";
 
         /**
+         * PlayerState gold.
+         * @member {number} gold
+         * @memberof moba.PlayerState
+         * @instance
+         */
+        PlayerState.prototype.gold = 0;
+
+        /**
+         * PlayerState goldEarned.
+         * @member {number} goldEarned
+         * @memberof moba.PlayerState
+         * @instance
+         */
+        PlayerState.prototype.goldEarned = 0;
+
+        /**
+         * PlayerState lastHits.
+         * @member {number} lastHits
+         * @memberof moba.PlayerState
+         * @instance
+         */
+        PlayerState.prototype.lastHits = 0;
+
+        /**
+         * PlayerState assists.
+         * @member {number} assists
+         * @memberof moba.PlayerState
+         * @instance
+         */
+        PlayerState.prototype.assists = 0;
+
+        /**
+         * PlayerState inventory.
+         * @member {Array.<moba.IInventorySlot>} inventory
+         * @memberof moba.PlayerState
+         * @instance
+         */
+        PlayerState.prototype.inventory = $util.emptyArray;
+
+        /**
          * Creates a new PlayerState instance using the specified properties.
          * @function create
          * @memberof moba.PlayerState
@@ -1342,6 +1411,17 @@ export const moba = $root.moba = (() => {
                 writer.uint32(/* id 11, wireType 0 =*/88).uint32(message.lastProcessedSeq);
             if (message.heroId != null && Object.hasOwnProperty.call(message, "heroId"))
                 writer.uint32(/* id 12, wireType 2 =*/98).string(message.heroId);
+            if (message.gold != null && Object.hasOwnProperty.call(message, "gold"))
+                writer.uint32(/* id 13, wireType 0 =*/104).uint32(message.gold);
+            if (message.goldEarned != null && Object.hasOwnProperty.call(message, "goldEarned"))
+                writer.uint32(/* id 14, wireType 0 =*/112).uint32(message.goldEarned);
+            if (message.lastHits != null && Object.hasOwnProperty.call(message, "lastHits"))
+                writer.uint32(/* id 15, wireType 0 =*/120).uint32(message.lastHits);
+            if (message.assists != null && Object.hasOwnProperty.call(message, "assists"))
+                writer.uint32(/* id 16, wireType 0 =*/128).uint32(message.assists);
+            if (message.inventory != null && message.inventory.length)
+                for (let i = 0; i < message.inventory.length; ++i)
+                    $root.moba.InventorySlot.encode(message.inventory[i], writer.uint32(/* id 17, wireType 2 =*/138).fork(), q + 1).ldelim();
             return writer;
         };
 
@@ -1440,6 +1520,28 @@ export const moba = $root.moba = (() => {
                         message.heroId = reader.string();
                         break;
                     }
+                case 13: {
+                        message.gold = reader.uint32();
+                        break;
+                    }
+                case 14: {
+                        message.goldEarned = reader.uint32();
+                        break;
+                    }
+                case 15: {
+                        message.lastHits = reader.uint32();
+                        break;
+                    }
+                case 16: {
+                        message.assists = reader.uint32();
+                        break;
+                    }
+                case 17: {
+                        if (!(message.inventory && message.inventory.length))
+                            message.inventory = [];
+                        message.inventory.push($root.moba.InventorySlot.decode(reader, reader.uint32(), undefined, long + 1));
+                        break;
+                    }
                 default:
                     reader.skipType(tag & 7, long);
                     break;
@@ -1520,6 +1622,27 @@ export const moba = $root.moba = (() => {
             if (message.heroId != null && Object.hasOwnProperty.call(message, "heroId"))
                 if (!$util.isString(message.heroId))
                     return "heroId: string expected";
+            if (message.gold != null && Object.hasOwnProperty.call(message, "gold"))
+                if (!$util.isInteger(message.gold))
+                    return "gold: integer expected";
+            if (message.goldEarned != null && Object.hasOwnProperty.call(message, "goldEarned"))
+                if (!$util.isInteger(message.goldEarned))
+                    return "goldEarned: integer expected";
+            if (message.lastHits != null && Object.hasOwnProperty.call(message, "lastHits"))
+                if (!$util.isInteger(message.lastHits))
+                    return "lastHits: integer expected";
+            if (message.assists != null && Object.hasOwnProperty.call(message, "assists"))
+                if (!$util.isInteger(message.assists))
+                    return "assists: integer expected";
+            if (message.inventory != null && Object.hasOwnProperty.call(message, "inventory")) {
+                if (!Array.isArray(message.inventory))
+                    return "inventory: array expected";
+                for (let i = 0; i < message.inventory.length; ++i) {
+                    let error = $root.moba.InventorySlot.verify(message.inventory[i], long + 1);
+                    if (error)
+                        return "inventory." + error;
+                }
+            }
             return null;
         };
 
@@ -1565,6 +1688,24 @@ export const moba = $root.moba = (() => {
                 message.lastProcessedSeq = object.lastProcessedSeq >>> 0;
             if (object.heroId != null)
                 message.heroId = String(object.heroId);
+            if (object.gold != null)
+                message.gold = object.gold >>> 0;
+            if (object.goldEarned != null)
+                message.goldEarned = object.goldEarned >>> 0;
+            if (object.lastHits != null)
+                message.lastHits = object.lastHits >>> 0;
+            if (object.assists != null)
+                message.assists = object.assists >>> 0;
+            if (object.inventory) {
+                if (!Array.isArray(object.inventory))
+                    throw TypeError(".moba.PlayerState.inventory: array expected");
+                message.inventory = [];
+                for (let i = 0; i < object.inventory.length; ++i) {
+                    if (!$util.isObject(object.inventory[i]))
+                        throw TypeError(".moba.PlayerState.inventory: object expected");
+                    message.inventory[i] = $root.moba.InventorySlot.fromObject(object.inventory[i], long + 1);
+                }
+            }
             return message;
         };
 
@@ -1585,6 +1726,8 @@ export const moba = $root.moba = (() => {
             if (q > $util.recursionLimit)
                 throw Error("max depth exceeded");
             let object = {};
+            if (options.arrays || options.defaults)
+                object.inventory = [];
             if (options.defaults) {
                 object.index = 0;
                 object.x = 0;
@@ -1598,6 +1741,10 @@ export const moba = $root.moba = (() => {
                 object.deaths = 0;
                 object.lastProcessedSeq = 0;
                 object.heroId = "";
+                object.gold = 0;
+                object.goldEarned = 0;
+                object.lastHits = 0;
+                object.assists = 0;
             }
             if (message.index != null && Object.hasOwnProperty.call(message, "index"))
                 object.index = message.index;
@@ -1623,6 +1770,19 @@ export const moba = $root.moba = (() => {
                 object.lastProcessedSeq = message.lastProcessedSeq;
             if (message.heroId != null && Object.hasOwnProperty.call(message, "heroId"))
                 object.heroId = message.heroId;
+            if (message.gold != null && Object.hasOwnProperty.call(message, "gold"))
+                object.gold = message.gold;
+            if (message.goldEarned != null && Object.hasOwnProperty.call(message, "goldEarned"))
+                object.goldEarned = message.goldEarned;
+            if (message.lastHits != null && Object.hasOwnProperty.call(message, "lastHits"))
+                object.lastHits = message.lastHits;
+            if (message.assists != null && Object.hasOwnProperty.call(message, "assists"))
+                object.assists = message.assists;
+            if (message.inventory && message.inventory.length) {
+                object.inventory = [];
+                for (let j = 0; j < message.inventory.length; ++j)
+                    object.inventory[j] = $root.moba.InventorySlot.toObject(message.inventory[j], options, q + 1);
+            }
             return object;
         };
 
@@ -1653,6 +1813,272 @@ export const moba = $root.moba = (() => {
         };
 
         return PlayerState;
+    })();
+
+    moba.InventorySlot = (function() {
+
+        /**
+         * Properties of an InventorySlot.
+         * @memberof moba
+         * @interface IInventorySlot
+         * @property {number|null} [itemIndex] InventorySlot itemIndex
+         * @property {number|null} [readyTick] InventorySlot readyTick
+         */
+
+        /**
+         * Constructs a new InventorySlot.
+         * @memberof moba
+         * @classdesc Represents an InventorySlot.
+         * @implements IInventorySlot
+         * @constructor
+         * @param {moba.IInventorySlot=} [properties] Properties to set
+         */
+        function InventorySlot(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * InventorySlot itemIndex.
+         * @member {number} itemIndex
+         * @memberof moba.InventorySlot
+         * @instance
+         */
+        InventorySlot.prototype.itemIndex = 0;
+
+        /**
+         * InventorySlot readyTick.
+         * @member {number} readyTick
+         * @memberof moba.InventorySlot
+         * @instance
+         */
+        InventorySlot.prototype.readyTick = 0;
+
+        /**
+         * Creates a new InventorySlot instance using the specified properties.
+         * @function create
+         * @memberof moba.InventorySlot
+         * @static
+         * @param {moba.IInventorySlot=} [properties] Properties to set
+         * @returns {moba.InventorySlot} InventorySlot instance
+         */
+        InventorySlot.create = function create(properties) {
+            return new InventorySlot(properties);
+        };
+
+        /**
+         * Encodes the specified InventorySlot message. Does not implicitly {@link moba.InventorySlot.verify|verify} messages.
+         * @function encode
+         * @memberof moba.InventorySlot
+         * @static
+         * @param {moba.IInventorySlot} message InventorySlot message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        InventorySlot.encode = function encode(message, writer, q) {
+            if (!writer)
+                writer = $Writer.create();
+            if (q === undefined)
+                q = 0;
+            if (q > $util.recursionLimit)
+                throw Error("max depth exceeded");
+            if (message.itemIndex != null && Object.hasOwnProperty.call(message, "itemIndex"))
+                writer.uint32(/* id 1, wireType 0 =*/8).uint32(message.itemIndex);
+            if (message.readyTick != null && Object.hasOwnProperty.call(message, "readyTick"))
+                writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.readyTick);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified InventorySlot message, length delimited. Does not implicitly {@link moba.InventorySlot.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof moba.InventorySlot
+         * @static
+         * @param {moba.IInventorySlot} message InventorySlot message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        InventorySlot.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer && writer.len ? writer.fork() : writer).ldelim();
+        };
+
+        /**
+         * Decodes an InventorySlot message from the specified reader or buffer.
+         * @function decode
+         * @memberof moba.InventorySlot
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {moba.InventorySlot} InventorySlot
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        InventorySlot.decode = function decode(reader, length, error, long) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            if (long === undefined)
+                long = 0;
+            if (long > $Reader.recursionLimit)
+                throw Error("maximum nesting depth exceeded");
+            let end, message;
+            if (length === undefined)
+                end = reader.len;
+            else {
+                end = reader.pos + length;
+                if (end > reader.len)
+                    throw RangeError("index out of range");
+                length = reader.len;
+                reader.len = end;
+            }
+            message = new $root.moba.InventorySlot();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.itemIndex = reader.uint32();
+                        break;
+                    }
+                case 2: {
+                        message.readyTick = reader.uint32();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7, long);
+                    break;
+                }
+            }
+            if (length !== undefined) {
+                if (reader.pos !== end)
+                    throw RangeError("index out of range");
+                reader.len = length;
+            }
+            return message;
+        };
+
+        /**
+         * Decodes an InventorySlot message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof moba.InventorySlot
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {moba.InventorySlot} InventorySlot
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        InventorySlot.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies an InventorySlot message.
+         * @function verify
+         * @memberof moba.InventorySlot
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        InventorySlot.verify = function verify(message, long) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (long === undefined)
+                long = 0;
+            if (long > $util.recursionLimit)
+                return "maximum nesting depth exceeded";
+            if (message.itemIndex != null && Object.hasOwnProperty.call(message, "itemIndex"))
+                if (!$util.isInteger(message.itemIndex))
+                    return "itemIndex: integer expected";
+            if (message.readyTick != null && Object.hasOwnProperty.call(message, "readyTick"))
+                if (!$util.isInteger(message.readyTick))
+                    return "readyTick: integer expected";
+            return null;
+        };
+
+        /**
+         * Creates an InventorySlot message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof moba.InventorySlot
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {moba.InventorySlot} InventorySlot
+         */
+        InventorySlot.fromObject = function fromObject(object, long) {
+            if (object instanceof $root.moba.InventorySlot)
+                return object;
+            if (!$util.isObject(object))
+                throw TypeError(".moba.InventorySlot: object expected");
+            if (long === undefined)
+                long = 0;
+            if (long > $util.recursionLimit)
+                throw Error("maximum nesting depth exceeded");
+            let message = new $root.moba.InventorySlot();
+            if (object.itemIndex != null)
+                message.itemIndex = object.itemIndex >>> 0;
+            if (object.readyTick != null)
+                message.readyTick = object.readyTick >>> 0;
+            return message;
+        };
+
+        /**
+         * Creates a plain object from an InventorySlot message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof moba.InventorySlot
+         * @static
+         * @param {moba.InventorySlot} message InventorySlot
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        InventorySlot.toObject = function toObject(message, options, q) {
+            if (!options)
+                options = {};
+            if (q === undefined)
+                q = 0;
+            if (q > $util.recursionLimit)
+                throw Error("max depth exceeded");
+            let object = {};
+            if (options.defaults) {
+                object.itemIndex = 0;
+                object.readyTick = 0;
+            }
+            if (message.itemIndex != null && Object.hasOwnProperty.call(message, "itemIndex"))
+                object.itemIndex = message.itemIndex;
+            if (message.readyTick != null && Object.hasOwnProperty.call(message, "readyTick"))
+                object.readyTick = message.readyTick;
+            return object;
+        };
+
+        /**
+         * Converts this InventorySlot to JSON.
+         * @function toJSON
+         * @memberof moba.InventorySlot
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        InventorySlot.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for InventorySlot
+         * @function getTypeUrl
+         * @memberof moba.InventorySlot
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        InventorySlot.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/moba.InventorySlot";
+        };
+
+        return InventorySlot;
     })();
 
     moba.Snapshot = (function() {

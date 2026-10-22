@@ -4,6 +4,7 @@ export interface GameInput {
   dy: number;
   attack: boolean;
   cast?: 'Q' | '1' | '2' | '3';
+  targetUnitId?: number;
 }
 
 export interface MatchParticipant {
@@ -16,7 +17,22 @@ export interface MatchFound {
   matchId: string;
   participants: MatchParticipant[];
   heroes: { id: string; name: string; role: string; color: number }[];
+  items: ItemDefinition[];
 }
+
+export interface ItemDefinition {
+  index: number;
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  stats: { attack?: number; maxHp?: number; maxMana?: number; speed?: number; hpRegen?: number; manaRegen?: number };
+  components: string[];
+  activeKind?: 'heal' | 'shield';
+  cooldown: number;
+}
+
+export interface InventorySlot { itemIndex: number; readyTick: number }
 
 export interface WorldPlayer {
   id: string;
@@ -32,6 +48,11 @@ export interface WorldPlayer {
   speed: number;
   kills: number;
   deaths: number;
+  assists: number;
+  gold: number;
+  goldEarned: number;
+  lastHits: number;
+  inventory: InventorySlot[];
   lastProcessedSeq: number;
 }
 

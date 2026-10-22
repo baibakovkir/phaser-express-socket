@@ -30,9 +30,12 @@ export class NetworkGameScene extends Phaser.Scene {
   private sequence = 0;
   private pending: GameInput[] = [];
   private pendingCast?: GameInput['cast'];
+  private selectedUnitId?: number;
   private localPosition?: { x: number; y: number };
   private readonly onSnapshot = (data: unknown) => this.receiveSnapshot(data);
   private readonly onAbort = () => this.statusText.setText('Match interrupted');
+  private readonly onCycleTarget = () => this.cycleTarget();
+  private readonly onPointerDown = (pointer: Phaser.Input.Pointer) => this.selectUnitAt(pointer.worldX, pointer.worldY);
   private readonly onKeyDown = (event: KeyboardEvent) => {
     const key = event.key.toUpperCase();
     if (!event.repeat && ['Q', '1', '2', '3'].includes(key) && !this.pendingCast) {
@@ -58,6 +61,7 @@ export class NetworkGameScene extends Phaser.Scene {
     this.snapshots = [];
     this.pending = [];
     this.pendingCast = undefined;
+    this.selectedUnitId = undefined;
     this.localPosition = undefined;
     this.sequence = 0;
     this.cameraReady = false;
@@ -76,12 +80,16 @@ export class NetworkGameScene extends Phaser.Scene {
     this.cameras.main.setZoom(navigator.maxTouchPoints > 0 ? 1.5 : 1);
     this.keys = this.input.keyboard!.addKeys('W,A,S,D,SPACE') as Keys;
     this.input.keyboard!.on('keydown', this.onKeyDown);
+    this.input.on('pointerdown', this.onPointerDown);
+    EventBus.on('ui:cycle-target', this.onCycleTarget);
     network.on('game:snapshot', this.onSnapshot);
     network.on('match:aborted', this.onAbort);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       network.off('game:snapshot', this.onSnapshot);
       network.off('match:aborted', this.onAbort);
       this.input.keyboard?.off('keydown', this.onKeyDown);
+      this.input.off('pointerdown', this.onPointerDown);
+      EventBus.off('ui:cycle-target', this.onCycleTarget);
       resetMobileInput();
       for (const label of this.labels.values()) label.destroy();
       this.labels.clear();
@@ -96,9 +104,12 @@ export class NetworkGameScene extends Phaser.Scene {
       delete this.game.canvas.dataset.serverX;
       delete this.game.canvas.dataset.serverTick;
       delete this.game.canvas.dataset.serverMana;
+      delete this.game.canvas.dataset.serverGold;
       delete this.game.canvas.dataset.attackTick;
       delete this.game.canvas.dataset.castTick;
       delete this.game.canvas.dataset.cameraX;
+      delete this.game.canvas.dataset.selectedTarget;
+      delete this.game.canvas.dataset.renderedHeroes;
     });
     this.time.addEvent({ delay: TICK_MS, loop: true, callback: () => this.sendInput() });
   }
@@ -119,8 +130,17 @@ export class NetworkGameScene extends Phaser.Scene {
     if (this.snapshots.length > 8) this.snapshots.shift();
     this.receivedAt = this.time.now;
     const own = snapshot.players.find(player => player.id === this.playerId);
+    if (this.selectedUnitId && !snapshot.units.some(unit => unit.id === this.selectedUnitId && unit.hp > 0)) {
+      this.selectedUnitId = undefined;
+    }
+    const selected = snapshot.units.find(unit => unit.id === this.selectedUnitId);
+    EventBus.emit('game:target', selected ? `${selected.kind} ${selected.hp}/${selected.maxHp}` : '');
+    this.game.canvas.dataset.selectedTarget = String(this.selectedUnitId || 0);
     if (own) {
+      const fountain = snapshot.units.find(unit => unit.kind === 'fountain' && unit.team === own.team);
+      EventBus.emit('game:economy', own, snapshot.tick, !!fountain && own.hp > 0 && Math.hypot(own.x - fountain.x, own.y - fountain.y) <= 180);
       this.game.canvas.dataset.serverX = String(own.x);
+      this.game.canvas.dataset.serverGold = String(own.gold);
       this.game.canvas.dataset.serverTick = String(snapshot.tick);
       this.game.canvas.dataset.serverMana = String(own.mana);
       this.pending = this.pending.filter(input => input.seq > own.lastProcessedSeq);
@@ -157,6 +177,7 @@ export class NetworkGameScene extends Phaser.Scene {
       dy: Phaser.Math.Clamp(Number(this.keys.S.isDown) - Number(this.keys.W.isDown) + mobileInput.dy, -1, 1),
       attack: this.keys.SPACE.isDown || mobileInput.attack,
       ...(cast ? { cast } : {}),
+      ...(this.selectedUnitId ? { targetUnitId: this.selectedUnitId } : {}),
     };
     this.pending.push(input);
     if (this.pending.length > 12) this.pending.shift();
@@ -219,6 +240,7 @@ export class NetworkGameScene extends Phaser.Scene {
       const y = player.id === this.playerId && this.localPosition ? this.localPosition.y : Phaser.Math.Linear(previous.y, player.y, alpha);
       this.drawPlayer(player, x, y);
     }
+    this.game.canvas.dataset.renderedHeroes = JSON.stringify([...this.playerSprites].map(([id, sprite]) => ({ id, texture: sprite.texture.key })));
     this.drawEffects(latest.effects, renderTick);
     for (const [id, label] of this.labels) {
       if (!seen.has(id)) {
@@ -231,44 +253,112 @@ export class NetworkGameScene extends Phaser.Scene {
     }
   }
 
+  private targetableUnits(): WorldUnit[] {
+    const snapshot = this.snapshots.at(-1);
+    const own = snapshot?.players.find(player => player.id === this.playerId);
+    if (!snapshot || !own) return [];
+    return snapshot.units.filter(unit => unit.hp > 0 && unit.team !== own.team &&
+      unit.kind !== 'fountain' && unit.kind !== 'shrine' &&
+      Math.hypot(unit.x - own.x, unit.y - own.y) < 420);
+  }
+
+  private selectUnitAt(x: number, y: number): void {
+    const target = this.targetableUnits()
+      .filter(unit => Math.hypot(unit.x - x, unit.y - y) < (unit.kind === 'creep' ? 42 : 55))
+      .sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
+    this.selectedUnitId = target?.id;
+  }
+
+  private cycleTarget(): void {
+    const targets = this.targetableUnits().sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp || a.id - b.id);
+    const index = targets.findIndex(unit => unit.id === this.selectedUnitId);
+    this.selectedUnitId = targets.length ? targets[(index + 1) % targets.length].id : undefined;
+  }
+
   private drawMap(): void {
-    this.mapGraphics.fillStyle(0x122b28);
-    this.mapGraphics.fillRect(0, 0, MAP_WIDTH, MAP_HEIGHT);
-    this.mapGraphics.lineStyle(8, 0x35635c, 0.8);
-    this.mapGraphics.strokeRect(4, 4, MAP_WIDTH - 8, MAP_HEIGHT - 8);
-    // Stone paths form two diagonal lanes around one contested garden.
+    const ground = this.mapGraphics;
+    ground.fillStyle(0x243c36).fillRect(0, 0, MAP_WIDTH, MAP_HEIGHT);
+    ground.fillStyle(0x183b36).fillRect(0, 0, MAP_WIDTH, 990);
+    ground.fillStyle(0x2e4739, 0.8).fillEllipse(1600, 360, 2800, 1150);
+    ground.fillStyle(0x3d513e, 0.65).fillEllipse(1600, 1770, 2900, 400);
+    ground.lineStyle(7, 0x83a5a0, 0.7).strokeRect(4, 4, MAP_WIDTH - 8, MAP_HEIGHT - 8);
+
+    // The upper wilderness is one contiguous contested area, with a stream between camps.
+    const stream = [{ x: 180, y: 770 }, { x: 740, y: 680 }, { x: 1390, y: 770 },
+      { x: 1950, y: 620 }, { x: 2600, y: 750 }, { x: 3100, y: 690 }];
+    this.strokeRoute(stream, 90, 0x183c42);
+    this.strokeRoute(stream, 68, 0x387d84);
+    this.strokeRoute(stream, 42, 0x57969a);
+
     for (const lane of LANES) {
-      for (let index = 1; index < lane.points.length; index++) {
-        const from = lane.points[index - 1];
-        const to = lane.points[index];
-        this.mapGraphics.lineStyle(110, 0x283f3b).lineBetween(from.x, from.y, to.x, to.y);
-        this.mapGraphics.lineStyle(90, 0xa6a292).lineBetween(from.x, from.y, to.x, to.y);
-        this.mapGraphics.lineStyle(2, 0xcac4a6, 0.6).lineBetween(from.x, from.y, to.x, to.y);
+      this.strokeRoute(lane.path, 200, 0x1a302c);
+      this.strokeRoute(lane.path, 184, 0x5c6659);
+      this.strokeRoute(lane.path, 166, 0x827e69);
+      this.strokeRoute(lane.path, 146, 0xaaa48c);
+      this.strokeRoute(lane.path, 112, 0xb8b19b);
+      for (let index = 4; index < lane.path.length - 4; index += 6) {
+        const point = lane.path[index];
+        ground.fillStyle(0xd4c9a8, 0.42).fillCircle(point.x, point.y, 8);
       }
     }
-    this.mapGraphics.fillStyle(0x224744).fillEllipse(1600, 1000, 1700, 900);
-    this.mapGraphics.lineStyle(30, 0x4a858a, 0.65).lineBetween(1120, 350, 2130, 1640);
-    for (let i = 0; i < 48; i++) {
-      const x = 230 + i * 61 % 2740;
-      const y = 130 + i * 277 % 1700;
-      if (LANES.some(lane => lane.points.some(point => Math.hypot(point.x - x, point.y - y) < 145))) continue;
-      this.mapGraphics.fillStyle(i % 3 === 0 ? 0x8c6478 : 0x33594a, 0.8).fillCircle(x, y, 16 + i % 5 * 4);
-      this.mapGraphics.fillStyle(0xb59a69, 0.8).fillCircle(x - 5, y - 7, 4);
+
+    for (let index = 0; index < 125; index++) {
+      const x = 115 + index * 241 % 2980;
+      const y = 85 + index * 367 % 865;
+      const clearRoad = LANES.every(lane => lane.path.every(point => Math.hypot(point.x - x, point.y - y) > 135));
+      const clearCamp = CAMPS.every(camp => Math.hypot(camp.x - x, camp.y - y) > 105);
+      if (!clearRoad || !clearCamp || Math.hypot(BOSS.x - x, BOSS.y - y) < 165) continue;
+      const radius = 21 + index % 5 * 5;
+      ground.fillStyle(0x142f2b, 0.7).fillEllipse(x + 8, y + 9, radius * 2.2, radius * 1.2);
+      ground.fillStyle(index % 7 === 0 ? 0x91677c : 0x3a6652).fillCircle(x, y, radius);
+      ground.fillStyle(index % 7 === 0 ? 0xc28da1 : 0x629071, 0.75).fillCircle(x - 7, y - 8, radius * 0.48);
     }
     for (const camp of CAMPS) {
-      this.mapGraphics.lineStyle(3, 0xc7a86b, 0.75).strokeCircle(camp.x, camp.y, 70);
-      this.mapGraphics.fillStyle(0x7c463e).fillCircle(camp.x, camp.y, 10);
+      ground.fillStyle(0x504e3d, 0.85).fillCircle(camp.x, camp.y, 78);
+      ground.lineStyle(6, 0xe5c884, 0.75).strokeCircle(camp.x, camp.y, 72);
+      ground.fillStyle(0x735049).fillCircle(camp.x, camp.y, 13);
+      ground.fillStyle(0xf2c878, 0.75).fillCircle(camp.x, camp.y, 6);
     }
     for (const shrine of SHRINES) {
-      this.mapGraphics.lineStyle(3, 0xffd68a).strokeCircle(shrine.x, shrine.y, 90);
+      ground.fillStyle(0x2b5148, 0.85).fillCircle(shrine.x, shrine.y, 88);
+      ground.lineStyle(5, 0xe6c779).strokeCircle(shrine.x, shrine.y, 79);
+      this.drawTorii(shrine.x, shrine.y, 0.75);
     }
-    this.mapGraphics.lineStyle(5, 0xb05258).strokeCircle(BOSS.x, BOSS.y, 110);
+    ground.fillStyle(0x5b483e).fillCircle(BOSS.x, BOSS.y, 119);
+    ground.lineStyle(7, 0xc26a5f).strokeCircle(BOSS.x, BOSS.y, 112);
+    this.drawTorii(BOSS.x, BOSS.y - 130, 1.15);
+    this.add.text(1570, 190, 'COMMON JUNGLE', { fontSize: '27px', color: '#e4d8ae' }).setOrigin(0.5).setDepth(-0.5);
+    this.add.text(1600, 960, 'MID', { fontSize: '24px', color: '#4d514c' }).setOrigin(0.5).setDepth(-0.5);
+    this.add.text(1600, 1700, 'BOTTOM', { fontSize: '24px', color: '#4d514c' }).setOrigin(0.5).setDepth(-0.5);
+  }
+
+  private strokeRoute(points: { x: number; y: number }[], width: number, color: number): void {
+    const ground = this.mapGraphics;
+    ground.lineStyle(width, color, 1).beginPath().moveTo(points[0].x, points[0].y);
+    for (const point of points.slice(1)) ground.lineTo(point.x, point.y);
+    ground.strokePath();
+    ground.fillStyle(color).fillCircle(points[0].x, points[0].y, width / 2);
+    ground.fillCircle(points.at(-1)!.x, points.at(-1)!.y, width / 2);
+  }
+
+  private drawTorii(x: number, y: number, scale: number): void {
+    const ground = this.mapGraphics;
+    ground.fillStyle(0x962f2e);
+    ground.fillRect(x - 38 * scale, y - 22 * scale, 9 * scale, 52 * scale);
+    ground.fillRect(x + 29 * scale, y - 22 * scale, 9 * scale, 52 * scale);
+    ground.fillRect(x - 49 * scale, y - 34 * scale, 98 * scale, 10 * scale);
+    ground.fillRect(x - 43 * scale, y - 15 * scale, 86 * scale, 6 * scale);
+    ground.fillStyle(0xe4c88e).fillCircle(x, y - 29 * scale, 5 * scale);
   }
 
   private drawUnit(unit: WorldUnit, x: number, y: number): void {
     if (unit.hp <= 0) return;
     const teamColor = unit.team === 1 ? 0x70bcff : unit.team === 2 ? 0xff8686 : 0xe6bc72;
     const radius = unit.kind === 'boss' ? 38 : unit.kind === 'creep' ? 13 : unit.kind === 'neutral' ? 17 : 30;
+    if (unit.id === this.selectedUnitId) {
+      this.graphics.lineStyle(4, 0xffe28a, 0.95).strokeCircle(x, y, radius + 19);
+      this.graphics.lineStyle(2, 0xffffff, 0.75).strokeCircle(x, y, radius + 12);
+    }
     if (unit.kind === 'tower') {
       this.graphics.fillStyle(0x211e26).fillRect(x - 18, y - 35, 36, 62);
       this.graphics.fillStyle(teamColor).fillTriangle(x - 28, y - 32, x + 28, y - 32, x, y - 66);
@@ -318,6 +408,7 @@ export class NetworkGameScene extends Phaser.Scene {
         sprite = this.add.image(x, y, texture).setDepth(2);
         this.playerSprites.set(player.id, sprite);
       }
+      if (sprite.texture.key !== texture) sprite.setTexture(texture);
       const previous = this.lastRenderPositions.get(player.id);
       const moving = previous && Math.hypot(x - previous.x, y - previous.y) > 0.35;
       const bob = moving ? Math.sin(this.time.now / 85) * 2 : Math.sin(this.time.now / 350) * 0.5;
@@ -354,15 +445,7 @@ export class NetworkGameScene extends Phaser.Scene {
       const progress = Math.max(0, renderTick - effect.tick) / 18;
       if (progress > 1) continue;
       active.add(effect.id);
-      const color = effect.kind === 'heal' || effect.kind === 'revive' ? 0x5eff9b
-        : effect.kind === 'shield' ? 0x6acfff
-          : effect.kind === 'meteor' || effect.kind === 'execute' ? 0xff6644 : 0xffe27a;
-      this.graphics.lineStyle(Math.max(1, 4 * (1 - progress)), color, 1 - progress);
-      this.graphics.strokeCircle(effect.x, effect.y, 12 + progress * (effect.kind === 'meteor' ? 100 : 60));
-      if (effect.kind === 'dash') {
-        this.graphics.fillStyle(color, 0.5 * (1 - progress));
-        this.graphics.fillCircle(effect.x, effect.y, 24 + progress * 20);
-      }
+      this.drawEffectShape(effect, progress);
       const caster = this.snapshots.at(-1)?.players.find(player => player.id === effect.casterId);
       const sourceUnit = this.snapshots.at(-1)?.units.find(unit => unit.id === effect.sourceUnitId);
       const rangedAttack = effect.kind === 'attack' && ['mage', 'support', 'marksman'].includes(caster?.heroId || '');
@@ -387,6 +470,8 @@ export class NetworkGameScene extends Phaser.Scene {
       image.setVisible(!origin || progress < 0.35);
       image.setScale((effect.kind === 'meteor' ? 3.2 : 2.3) * (1 + progress * 0.5));
       image.setAlpha(1 - progress);
+      image.setTint(effect.kind === 'nova' ? 0x8dcfff : effect.kind === 'shield' ? 0x86eaff
+        : effect.kind === 'heal' || effect.kind === 'revive' ? 0x8cff9c : 0xffffff);
       image.setRotation(origin ? Math.atan2(effect.y - origin.y, effect.x - origin.x) + Math.PI / 2 : progress * 2);
     }
     for (const [id, image] of this.effectImages) {
@@ -394,6 +479,57 @@ export class NetworkGameScene extends Phaser.Scene {
         image.destroy();
         this.effectImages.delete(id);
       }
+    }
+  }
+
+  private drawEffectShape(effect: WorldEffect, progress: number): void {
+    const g = this.graphics;
+    const { x, y } = effect;
+    const fade = 1 - progress;
+    switch (effect.kind) {
+      case 'dash':
+        g.fillStyle(0x78dcff, fade * 0.35).fillEllipse(x, y, 100 + progress * 80, 34);
+        g.lineStyle(5, 0xffffff, fade).lineBetween(x - 75, y - 12, x + 35, y - 12);
+        break;
+      case 'nova':
+        g.lineStyle(9 * fade + 1, 0x75c8ff, fade).strokeCircle(x, y, 20 + progress * 115);
+        g.lineStyle(3, 0xe7f7ff, fade).strokeCircle(x, y, 10 + progress * 78);
+        break;
+      case 'meteor':
+        g.fillStyle(0xffa354, fade).fillCircle(x, y - 110 * fade, 22 + 8 * progress);
+        g.lineStyle(12 * fade + 1, 0xff5335, fade).strokeCircle(x, y, progress * 130);
+        break;
+      case 'shield':
+        g.lineStyle(7 * fade + 1, 0x78e6ff, fade).strokeCircle(x, y, 35 + progress * 45);
+        g.fillStyle(0x7adfff, fade * 0.18).fillCircle(x, y, 33 + progress * 38);
+        break;
+      case 'heal':
+      case 'revive': {
+        const size = effect.kind === 'revive' ? 115 : 75;
+        g.fillStyle(0x72f59b, fade * 0.75).fillRect(x - 7, y - size / 2, 14, size);
+        g.fillRect(x - size / 2, y - 7, size, 14);
+        g.lineStyle(4, 0xc3ffd2, fade).strokeCircle(x, y, 22 + progress * size);
+        break;
+      }
+      case 'buff':
+        for (let ray = 0; ray < 8; ray++) {
+          const angle = ray * Math.PI / 4;
+          g.lineStyle(5, 0xffd06b, fade).lineBetween(x + Math.cos(angle) * 20, y + Math.sin(angle) * 20,
+            x + Math.cos(angle) * (42 + progress * 42), y + Math.sin(angle) * (42 + progress * 42));
+        }
+        break;
+      case 'execute':
+        g.lineStyle(13 * fade + 1, 0xff574b, fade).lineBetween(x - 58, y - 42, x + 55, y + 38);
+        g.lineStyle(5, 0xffc39a, fade).lineBetween(x + 40, y - 46, x - 46, y + 34);
+        break;
+      case 'strike':
+        g.lineStyle(8 * fade + 1, 0xffdc7f, fade).lineBetween(x - 38, y + 34, x + 42, y - 39);
+        break;
+      case 'shrine':
+        g.lineStyle(6, 0xffd77e, fade).strokeCircle(x, y, 35 + progress * 75);
+        break;
+      default:
+        g.lineStyle(4 * fade + 1, 0xffe8a2, fade).strokeCircle(x, y, 10 + progress * 38);
     }
   }
 }

@@ -198,6 +198,15 @@ class NetworkManager {
     this.socket.emit("game:input", { matchId, input: encodeInput(input) });
   }
 
+  itemAction(matchId: string, action: 'buy' | 'use', itemId: string): Promise<{ success: boolean; error?: string }> {
+    return new Promise(resolve => {
+      this.socket.timeout(4000).emit(`game:${action}-item`, { matchId, itemId },
+        (error: Error | null, response: { success: boolean; error?: string }) => {
+          resolve(error ? { success: false, error: 'Server did not respond' } : response);
+        });
+    });
+  }
+
   // Event listeners
   on(event: string, callback: (...args: unknown[]) => void) {
     this.socket.on(event, callback);

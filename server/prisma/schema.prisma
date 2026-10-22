@@ -57,6 +57,7 @@ model MatchPlayer {
   deaths      Int    @default(0)
   assists     Int    @default(0)
   goldEarned  Int    @default(0) @map("gold_earned")
+  lastHits    Int    @default(0) @map("last_hits")
   damageDelt  Int    @default(0) @map("damage_dealt")
 
   match  Match  @relation(fields: [matchId], references: [id])
@@ -96,4 +97,29 @@ model Ability {
   hero        Hero   @relation(fields: [heroId], references: [id])
 
   @@map("abilities")
+}
+
+model Item {
+  id          String @id
+  name        String
+  description String
+  price       Int
+  stats       Json
+  activeKind  String? @map("active_kind")
+  cooldown    Int     @default(0)
+  components  ItemComponent[] @relation("Recipe")
+  usedIn      ItemComponent[] @relation("Component")
+
+  @@map("items")
+}
+
+model ItemComponent {
+  itemId      String @map("item_id")
+  componentId String @map("component_id")
+  quantity    Int    @default(1)
+  item        Item   @relation("Recipe", fields: [itemId], references: [id])
+  component   Item   @relation("Component", fields: [componentId], references: [id])
+
+  @@id([itemId, componentId])
+  @@map("item_components")
 }

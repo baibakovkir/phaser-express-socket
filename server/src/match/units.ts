@@ -11,6 +11,8 @@ export interface CombatPlayer {
   y: number;
   hp: number;
   maxHp: number;
+  mana?: number;
+  maxMana?: number;
 }
 
 interface UnitState extends WorldUnit {
@@ -24,13 +26,27 @@ interface UnitState extends WorldUnit {
   homeY: number;
   aggroPlayerId?: string;
   aggroUntil: number;
+  returning: boolean;
+  formationOffset: number;
 }
 
 type EmitEffect = (sourceUnitId: number, kind: string, x: number, y: number, targetId?: string) => void;
 type DamagePlayer = (player: CombatPlayer, amount: number) => void;
 
 const distance = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
+const LEASH_RADIUS = 360;
+
+function lanePosition(path: { x: number; y: number }[], index: number, offset = 0) {
+  const point = path[index];
+  const before = path[Math.max(0, index - 1)];
+  const after = path[Math.min(path.length - 1, index + 1)];
+  const length = Math.hypot(after.x - before.x, after.y - before.y) || 1;
+  return { x: point.x - (after.y - before.y) / length * offset,
+    y: point.y + (after.x - before.x) / length * offset };
+}
+
 export class UnitSystem {
+  onKilled?: (unit: WorldUnit, playerId?: string, team?: 0 | 1 | 2) => void;
   readonly units = new Map<number, UnitState>();
   winnerTeam?: 1 | 2;
   bossBuffTeam?: 1 | 2;
@@ -44,26 +60,27 @@ export class UnitSystem {
       this.add('throne', team, 0, base.x, base.y, 1800);
       this.add('fountain', team, 0, base.x + (team === 1 ? -75 : 75), base.y + (team === 1 ? 65 : -65), 1000);
       for (const lane of LANES) {
-        const points = lane.points;
-        for (const index of team === 1 ? [1, 2] : [points.length - 2, points.length - 3]) {
-          this.add('tower', team, lane.id, points[index].x, points[index].y, 650);
+        const path = lane.path;
+        for (const fraction of team === 1 ? [0.22, 0.38] : [0.78, 0.62]) {
+          const point = path[Math.round((path.length - 1) * fraction)];
+          this.add('tower', team, lane.id, point.x, point.y, 650);
         }
-        const start = team === 1 ? points[0] : points.at(-1)!;
-        const next = team === 1 ? points[1] : points.at(-2)!;
-        this.add('barracks', team, lane.id, start.x * 0.7 + next.x * 0.3, start.y * 0.7 + next.y * 0.3, 1000);
+        const barracks = path[Math.round((path.length - 1) * (team === 1 ? 0.07 : 0.93))];
+        this.add('barracks', team, lane.id, barracks.x, barracks.y, 1000);
       }
     }
     for (const shrine of SHRINES) this.add('shrine', 0, 0, shrine.x, shrine.y, 500);
   }
 
-  private add(kind: WorldUnit['kind'], team: 0 | 1 | 2, lane: number, x: number, y: number, maxHp: number, campId?: number): UnitState {
+  private add(kind: WorldUnit['kind'], team: 0 | 1 | 2, lane: number, x: number, y: number, maxHp: number,
+    campId?: number, formationOffset = 0): UnitState {
     const unit: UnitState = {
       id: this.nextId++, kind, team, lane, x, y, hp: maxHp, maxHp,
       speed: kind === 'creep' ? 130 : kind === 'neutral' ? 135 : kind === 'boss' ? 110 : 0,
       attack: kind === 'creep' ? 18 : kind === 'neutral' ? 30 : kind === 'boss' ? 75 : kind === 'tower' ? 55 : 0,
       range: kind === 'tower' ? 235 : kind === 'boss' ? 80 : 72,
-      nextAttackTick: 0, pathIndex: team === 2 && lane ? (LANES.find(item => item.id === lane)?.points.length ?? 2) - 2 : 1,
-      campId, homeX: x, homeY: y, aggroUntil: 0,
+      nextAttackTick: 0, pathIndex: team === 2 && lane ? (LANES.find(item => item.id === lane)?.path.length ?? 2) - 2 : 1,
+      campId, homeX: x, homeY: y, aggroUntil: 0, returning: false, formationOffset,
     };
     this.units.set(unit.id, unit);
     return unit;
@@ -100,6 +117,7 @@ export class UnitSystem {
       unit.aggroUntil = tick + 6 * TICKS_PER_SECOND;
     }
     if (unit.hp > 0) return true;
+    this.onKilled?.(unit, playerId, team);
     if (unit.kind === 'throne' && team) this.winnerTeam = team;
     if (unit.kind === 'boss' && team) {
       this.bossBuffTeam = team;
@@ -132,7 +150,10 @@ export class UnitSystem {
       if (unit.kind === 'fountain') {
         for (const player of players) {
           if (player.team === unit.team && player.hp > 0 && distance(player, unit) < 145) {
-            player.hp = Math.min(player.maxHp, player.hp + 8 / TICKS_PER_SECOND);
+            player.hp = Math.min(player.maxHp, player.hp + player.maxHp * 0.15 / TICKS_PER_SECOND);
+            if (player.mana !== undefined && player.maxMana !== undefined) {
+              player.mana = Math.min(player.maxMana, player.mana + player.maxMana * 0.2 / TICKS_PER_SECOND);
+            }
           }
         }
         continue;
@@ -155,6 +176,17 @@ export class UnitSystem {
         continue;
       }
       if (!unit.attack) continue;
+      if ((unit.kind === 'neutral' || unit.kind === 'boss') &&
+        (unit.returning || distance(unit, { x: unit.homeX, y: unit.homeY }) >= LEASH_RADIUS)) {
+        unit.returning = true;
+        unit.aggroPlayerId = undefined;
+        this.moveToward(unit, unit.homeX, unit.homeY);
+        if (distance(unit, { x: unit.homeX, y: unit.homeY }) < 8) {
+          unit.returning = false;
+          unit.hp = unit.maxHp;
+        }
+        continue;
+      }
       const target = this.findTarget(unit, players, tick);
       if (target) {
         if (distance(unit, target) > unit.range && unit.speed) this.moveToward(unit, target.x, target.y);
@@ -175,9 +207,10 @@ export class UnitSystem {
     for (const lane of LANES) for (const team of [1, 2] as const) {
       const active = [...this.units.values()].filter(unit => unit.kind === 'creep' && unit.team === team && unit.lane === lane.id).length;
       if (active >= 24) continue;
-      const point = team === 1 ? lane.points[0] : lane.points.at(-1)!;
       for (let index = 0; index < 3; index++) {
-        this.add('creep', team, lane.id, point.x + (team === 1 ? -index * 23 : index * 23), point.y + (index - 1) * 22, 155);
+        const offset = (index - 1) * 38;
+        const point = lanePosition(lane.path, team === 1 ? 0 : lane.path.length - 1, offset);
+        this.add('creep', team, lane.id, point.x, point.y, 155, undefined, offset);
       }
     }
   }
@@ -204,7 +237,6 @@ export class UnitSystem {
       for (const other of this.units.values()) {
         if (other.kind === 'creep' && other.hp > 0 && distance(other, unit) < 130) candidates.push(other);
       }
-      if (distance(unit, { x: unit.homeX, y: unit.homeY }) > 750) return undefined;
     } else {
       for (const player of players) {
         if (player.hp > 0 && player.team !== unit.team && distance(player, unit) < searchRange) candidates.push(player);
@@ -231,7 +263,7 @@ export class UnitSystem {
   private advanceCreep(unit: UnitState): void {
     const lane = LANES.find(item => item.id === unit.lane);
     if (!lane) return;
-    const point = lane.points[unit.pathIndex];
+    const point = lane.path[unit.pathIndex] && lanePosition(lane.path, unit.pathIndex, unit.formationOffset);
     if (!point) return;
     if (distance(unit, point) < 12) unit.pathIndex += unit.team === 1 ? 1 : -1;
     else this.moveToward(unit, point.x, point.y);

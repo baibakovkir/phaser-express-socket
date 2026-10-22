@@ -135,6 +135,35 @@ async function main() {
     console.log(`  - ${ability.name} (${ability.heroId})`);
   }
 
+  const items = [
+    { id: 'kunai', name: 'Kunai', price: 250, stats: { attack: 8 } },
+    { id: 'bamboo', name: 'Bamboo Armor', price: 250, stats: { maxHp: 90 } },
+    { id: 'sandals', name: 'Traveler Sandals', price: 250, stats: { speed: 16 } },
+    { id: 'bead', name: 'Spirit Bead', price: 250, stats: { maxMana: 70, manaRegen: 0.5 } },
+    { id: 'lotus', name: 'Lotus Petal', price: 250, stats: { hpRegen: 1.5 } },
+    { id: 'moon_blade', name: 'Moon Blade', price: 1100, stats: { attack: 22, speed: 25 }, components: ['kunai', 'sandals'] },
+    { id: 'guardian_mask', name: 'Guardian Mask', price: 1100, stats: { maxHp: 210, hpRegen: 3 }, components: ['bamboo', 'lotus'] },
+    { id: 'spirit_fan', name: 'Spirit Fan', price: 1100, stats: { attack: 15, maxMana: 130, manaRegen: 2 }, components: ['bead', 'kunai'] },
+    { id: 'healing_charm', name: 'Healing Charm', price: 1150, stats: { maxHp: 120, maxMana: 90 }, components: ['bamboo', 'bead'], activeKind: 'heal', cooldown: 30 },
+    { id: 'smoke_bell', name: 'Smoke Bell', price: 1150, stats: { speed: 25, hpRegen: 2 }, components: ['sandals', 'lotus'], activeKind: 'shield', cooldown: 25 },
+  ];
+  for (const item of items) {
+    const { components, ...data } = item;
+    await prisma.item.upsert({
+      where: { id: item.id },
+      update: { ...data, description: item.activeKind === 'heal' ? 'Heal the weakest nearby ally.' :
+        item.activeKind === 'shield' ? 'Gain a temporary shield.' : 'Passive bonuses.' },
+      create: { ...data, description: item.activeKind === 'heal' ? 'Heal the weakest nearby ally.' :
+        item.activeKind === 'shield' ? 'Gain a temporary shield.' : 'Passive bonuses.' },
+    });
+  }
+  for (const item of items) {
+    await prisma.itemComponent.deleteMany({ where: { itemId: item.id } });
+    for (const componentId of item.components ?? []) {
+      await prisma.itemComponent.create({ data: { itemId: item.id, componentId } });
+    }
+  }
+
   console.log("Seeding completed!");
 }
 

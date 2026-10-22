@@ -43,6 +43,8 @@ test('registration launches a playable client scene', async ({ page }) => {
   const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+  page.on('requestfailed', request => errors.push(`${request.url()}: ${request.failure()?.errorText}`));
 
   await page.goto('/register', { waitUntil: 'domcontentloaded' });
   await page.getByLabel('Username').fill(`tester${unique.replace(/[^a-z0-9]/g, '').slice(-15)}`);
@@ -67,14 +69,21 @@ test('registration launches a playable client scene', async ({ page }) => {
   await page.getByRole('button', { name: /LOCK HERO/ }).click();
   const canvas = page.locator('canvas[data-game-ready="true"]');
   await expect(canvas).toBeVisible();
+  await page.keyboard.press('b');
+  const shop = page.getByRole('dialog', { name: 'Fountain shop' });
+  await expect(shop).toBeVisible();
+  await shop.getByRole('button', { name: 'Buy Kunai' }).click();
+  await expect(shop).toContainText('Inventory 1/6');
+  await shop.getByRole('button', { name: 'Buy Traveler Sandals' }).click();
+  await expect(shop).toContainText('Inventory 2/6');
+  await shop.getByRole('button', { name: 'Close shop' }).click();
   const initialX = Number(await canvas.getAttribute('data-server-x'));
   await page.keyboard.down('d');
   await expect.poll(async () => Number(await canvas.getAttribute('data-server-x'))).toBeGreaterThan(initialX + 350);
   await page.keyboard.up('d');
   await expect.poll(async () => Number(await canvas.getAttribute('data-camera-x'))).toBeGreaterThan(0);
-  const beforeDash = Number(await canvas.getAttribute('data-server-x'));
   await page.keyboard.press('q');
-  await expect.poll(async () => Number(await canvas.getAttribute('data-server-x'))).toBeGreaterThan(beforeDash + 150);
+  await expect.poll(async () => Number(await canvas.getAttribute('data-cast-tick'))).toBeGreaterThan(0);
   await expect.poll(async () => Number(await canvas.getAttribute('data-server-mana'))).toBeLessThan(100);
   await expect(page.getByLabel('Match timer')).toContainText('Lane 00:30');
   await page.keyboard.down('Space');
@@ -94,7 +103,11 @@ test('two players receive the same server match', async ({ browser }) => {
   const host = await hostContext.newPage();
   const guest = await guestContext.newPage();
   const errors: string[] = [];
-  for (const page of [host, guest]) page.on('pageerror', error => errors.push(error.message));
+  for (const page of [host, guest]) {
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+    page.on('requestfailed', request => errors.push(`${request.url()}: ${request.failure()?.errorText}`));
+  }
 
   try {
     await Promise.all([
@@ -110,15 +123,19 @@ test('two players receive the same server match', async ({ browser }) => {
     await expect(host.getByText('Players (2/6)')).toBeVisible();
     await host.getByRole('button', { name: /START GAME/ }).click();
 
-    for (const page of [host, guest]) {
+    for (const [page, hero] of [[host, 'Warrior'], [guest, 'Arcane Mage']] as const) {
       await expect(page.getByRole('heading', { name: 'Hero Select' })).toBeVisible();
-      await page.getByRole('button', { name: /Warrior/ }).first().click();
+      await page.getByRole('button', { name: new RegExp(hero) }).first().click();
       await page.getByRole('button', { name: /LOCK HERO/ }).click();
     }
     const hostCanvas = host.locator('canvas[data-game-ready="true"]');
     const guestCanvas = guest.locator('canvas[data-game-ready="true"]');
     await expect(hostCanvas).toBeVisible();
     await expect(guestCanvas).toBeVisible();
+    await expect.poll(async () => {
+      const rendered = JSON.parse(await hostCanvas.getAttribute('data-rendered-heroes') || '[]') as { texture: string }[];
+      return rendered.map(item => item.texture).sort().join(',');
+    }).toBe('arena-mage,arena-warrior');
     const hostTick = Number(await hostCanvas.getAttribute('data-server-tick'));
     await expect.poll(async () => Number(await hostCanvas.getAttribute('data-server-tick'))).toBeGreaterThan(hostTick + 10);
     await expect.poll(async () => Number(await guestCanvas.getAttribute('data-server-tick'))).toBeGreaterThan(hostTick + 10);
@@ -139,6 +156,8 @@ test('mobile player can scroll through setup and move with touch controls', asyn
   const page = await context.newPage();
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+  page.on('requestfailed', request => errors.push(`${request.url()}: ${request.failure()?.errorText}`));
 
   try {
     await registerAndOpenGame(page, 'mobile');
@@ -163,12 +182,23 @@ test('mobile player can scroll through setup and move with touch controls', asyn
 
     const canvas = page.locator('canvas[data-game-ready="true"]');
     await expect(canvas).toBeVisible();
+    await page.getByRole('button', { name: 'Open shop' }).tap();
+    const shop = page.getByRole('dialog', { name: 'Fountain shop' });
+    await expect(shop).toBeVisible();
+    await shop.getByRole('button', { name: 'Buy Kunai' }).tap();
+    await expect(shop).toContainText('Inventory 1/6');
+    await shop.getByRole('button', { name: 'Close shop' }).tap();
+    const shell = page.locator('.touch-match-shell');
+    await expect(shell).toBeVisible();
+    const shellBox = await shell.boundingBox();
+    expect(shellBox?.width).toBeCloseTo(390, 0);
+    expect(shellBox?.height).toBeCloseTo(844, 0);
     const joystick = page.getByTestId('move-joystick');
     await expect(joystick).toBeVisible();
-    await joystick.scrollIntoViewIfNeeded();
     await expect(joystick).toBeInViewport();
     await expect(page.getByRole('button', { name: 'Attack' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Cast Q' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Select next target' })).toBeVisible();
 
     const startX = Number(await canvas.getAttribute('data-server-x'));
     const box = await joystick.boundingBox();
@@ -178,7 +208,7 @@ test('mobile player can scroll through setup and move with touch controls', asyn
     const cdp = await context.newCDPSession(page);
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: centerX, y: centerY, id: 1 }] });
     await page.waitForTimeout(100);
-    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: centerX + 45, y: centerY, id: 1 }] });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: centerX, y: centerY + 45, id: 1 }] });
     await expect.poll(async () => {
       const style = await joystick.locator('div').getAttribute('style');
       return Number(style?.match(/\+ ([\d.]+)px/)?.[1] || 0);
