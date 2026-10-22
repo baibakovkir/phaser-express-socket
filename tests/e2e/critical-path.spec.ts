@@ -53,7 +53,7 @@ test('registration launches a playable client scene', async ({ page }) => {
 
   await expect(page).toHaveURL(/\/profile$/);
   await page.goto('/play', { waitUntil: 'domcontentloaded' });
-  await expect(page).toHaveURL(/^http:\/\/localhost:5173\//);
+  await expect(page).toHaveURL(new RegExp(`^http://localhost:${5173 + Number(process.env.E2E_PORT_OFFSET || 0)}/`));
   await expect(page.getByText(/Logged in as/)).toBeVisible();
 
   await page.getByPlaceholder('Enter lobby name...').fill(`E2E ${unique}`);
@@ -69,12 +69,21 @@ test('registration launches a playable client scene', async ({ page }) => {
   await expect(canvas).toBeVisible();
   const initialX = Number(await canvas.getAttribute('data-server-x'));
   await page.keyboard.down('d');
-  await expect.poll(async () => Number(await canvas.getAttribute('data-server-x'))).toBeGreaterThan(initialX + 30);
+  await expect.poll(async () => Number(await canvas.getAttribute('data-server-x'))).toBeGreaterThan(initialX + 350);
   await page.keyboard.up('d');
+  await expect.poll(async () => Number(await canvas.getAttribute('data-camera-x'))).toBeGreaterThan(0);
   const beforeDash = Number(await canvas.getAttribute('data-server-x'));
   await page.keyboard.press('q');
   await expect.poll(async () => Number(await canvas.getAttribute('data-server-x'))).toBeGreaterThan(beforeDash + 150);
   await expect.poll(async () => Number(await canvas.getAttribute('data-server-mana'))).toBeLessThan(100);
+  await expect(page.getByLabel('Match timer')).toContainText('Lane 00:30');
+  await page.keyboard.down('Space');
+  await expect.poll(async () => Number(await canvas.getAttribute('data-attack-tick'))).toBeGreaterThan(0);
+  await page.keyboard.up('Space');
+  const beforeSkill = Number(await canvas.getAttribute('data-server-mana'));
+  await page.keyboard.press('1');
+  await expect.poll(async () => Number(await canvas.getAttribute('data-server-mana'))).toBeLessThan(beforeSkill);
+  await expect.poll(async () => Number(await canvas.getAttribute('data-cast-tick'))).toBeGreaterThan(0);
   expect(errors).toEqual([]);
 });
 

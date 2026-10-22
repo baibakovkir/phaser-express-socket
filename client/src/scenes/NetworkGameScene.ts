@@ -1,12 +1,12 @@
 import Phaser from 'phaser';
-import type { GameInput, MatchFound, WorldEffect, WorldPlayer, WorldSnapshot } from '@moba/shared';
+import type { GameInput, MatchFound, WorldEffect, WorldPlayer, WorldSnapshot, WorldUnit } from '@moba/shared';
 import { decodeSnapshot } from '@moba/shared/codec';
+import { BOSS, BOSS_SPAWN_TICKS, CAMPS, JUNGLE_SPAWN_TICKS, LANES, LANE_WAVE_TICKS, MAP_HEIGHT, MAP_WIDTH, SHRINES, TICKS_PER_SECOND, nextSpawnSecond } from '@moba/shared/map';
 import { network } from '../network/socket';
 import { mobileInput, resetMobileInput, takeMobileCast } from '../input/mobileInput';
 import { EFFECT_SPRITES, HERO_SPRITES, spriteUrl } from '../assets/heroSprites';
+import { EventBus } from '../events/EventBus';
 
-const WIDTH = 1280;
-const HEIGHT = 720;
 const TICK_MS = 1000 / 30;
 type Keys = Record<'W' | 'A' | 'S' | 'D' | 'SPACE', Phaser.Input.Keyboard.Key>;
 
@@ -16,12 +16,15 @@ export class NetworkGameScene extends Phaser.Scene {
   private participants: MatchFound['participants'] = [];
   private heroes: MatchFound['heroes'] = [];
   private keys!: Keys;
+  private mapGraphics!: Phaser.GameObjects.Graphics;
   private graphics!: Phaser.GameObjects.Graphics;
   private statusText!: Phaser.GameObjects.Text;
   private labels = new Map<string, Phaser.GameObjects.Text>();
   private playerSprites = new Map<string, Phaser.GameObjects.Image>();
+  private unitSprites = new Map<number, Phaser.GameObjects.Image>();
   private effectImages = new Map<number, Phaser.GameObjects.Image>();
   private lastRenderPositions = new Map<string, { x: number; y: number }>();
+  private cameraReady = false;
   private snapshots: WorldSnapshot[] = [];
   private receivedAt = 0;
   private sequence = 0;
@@ -42,7 +45,7 @@ export class NetworkGameScene extends Phaser.Scene {
   }
 
   preload(): void {
-    for (const name of [...Object.values(HERO_SPRITES), ...EFFECT_SPRITES]) {
+    for (const name of [...Object.values(HERO_SPRITES), ...EFFECT_SPRITES, 'creep-blue', 'creep-red', 'neutral-ghost']) {
       this.load.image(`arena-${name}`, spriteUrl(name));
     }
   }
@@ -57,15 +60,19 @@ export class NetworkGameScene extends Phaser.Scene {
     this.pendingCast = undefined;
     this.localPosition = undefined;
     this.sequence = 0;
+    this.cameraReady = false;
   }
 
   create(): void {
-    for (const name of [...Object.values(HERO_SPRITES), ...EFFECT_SPRITES]) {
+    for (const name of [...Object.values(HERO_SPRITES), ...EFFECT_SPRITES, 'creep-blue', 'creep-red', 'neutral-ghost']) {
       const texture = this.textures.get(`arena-${name}`);
       if (texture.key !== '__MISSING') texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
     }
+    this.mapGraphics = this.add.graphics().setDepth(-1);
     this.graphics = this.add.graphics();
-    this.statusText = this.add.text(24, 18, 'Waiting for players...', { color: '#ffffff', fontSize: '20px' });
+    this.drawMap();
+    this.statusText = this.add.text(24, 18, 'Waiting for players...', { color: '#ffffff', fontSize: '18px', backgroundColor: '#10202dcc', padding: { x: 10, y: 6 } }).setScrollFactor(0).setDepth(10);
+    this.cameras.main.setBounds(0, 0, MAP_WIDTH, MAP_HEIGHT);
     this.keys = this.input.keyboard!.addKeys('W,A,S,D,SPACE') as Keys;
     this.input.keyboard!.on('keydown', this.onKeyDown);
     network.on('game:snapshot', this.onSnapshot);
@@ -79,6 +86,8 @@ export class NetworkGameScene extends Phaser.Scene {
       this.labels.clear();
       for (const sprite of this.playerSprites.values()) sprite.destroy();
       this.playerSprites.clear();
+      for (const sprite of this.unitSprites.values()) sprite.destroy();
+      this.unitSprites.clear();
       for (const image of this.effectImages.values()) image.destroy();
       this.effectImages.clear();
       this.lastRenderPositions.clear();
@@ -86,6 +95,9 @@ export class NetworkGameScene extends Phaser.Scene {
       delete this.game.canvas.dataset.serverX;
       delete this.game.canvas.dataset.serverTick;
       delete this.game.canvas.dataset.serverMana;
+      delete this.game.canvas.dataset.attackTick;
+      delete this.game.canvas.dataset.castTick;
+      delete this.game.canvas.dataset.cameraX;
     });
     this.time.addEvent({ delay: TICK_MS, loop: true, callback: () => this.sendInput() });
   }
@@ -115,11 +127,23 @@ export class NetworkGameScene extends Phaser.Scene {
     }
     if (snapshot.status === 'playing') this.game.canvas.dataset.gameReady = 'true';
     if (snapshot.status === 'finished') this.game.canvas.dataset.gameReady = 'finished';
+    if (snapshot.effects.some(effect => effect.kind === 'attack' && effect.casterId === this.playerId)) {
+      this.game.canvas.dataset.attackTick = String(snapshot.tick);
+    }
+    if (snapshot.effects.some(effect => effect.kind !== 'attack' && effect.casterId === this.playerId)) {
+      this.game.canvas.dataset.castTick = String(snapshot.tick);
+    }
+    const seconds = Math.floor(snapshot.tick / TICKS_PER_SECOND);
+    const clock = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+    const lane = nextSpawnSecond(snapshot.tick, LANE_WAVE_TICKS);
+    const jungle = nextSpawnSecond(snapshot.tick, JUNGLE_SPAWN_TICKS);
+    const boss = snapshot.tick < BOSS_SPAWN_TICKS ? '02:00' : snapshot.units.some(unit => unit.kind === 'boss') ? 'alive' : 'respawning';
+    EventBus.emit('game:clock', snapshot.tick, snapshot.units.some(unit => unit.kind === 'boss'));
     this.statusText.setText(snapshot.status === 'finished'
       ? `Team ${snapshot.winnerTeam} wins · refresh to play again`
       : snapshot.status === 'selecting'
         ? 'Waiting for hero selections...'
-        : `WASD move · Space attack · Q / 1 / 2 / 3 abilities · tick ${snapshot.tick}`);
+        : `${clock}  ·  Lane ${lane}s  ·  Jungle ${jungle}s  ·  Oni ${boss}\nWASD move · Space attack · Q / 1 / 2 / 3 abilities`);
   }
 
   private sendInput(): void {
@@ -140,7 +164,6 @@ export class NetworkGameScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     this.graphics.clear();
-    this.drawMap();
     const latest = this.snapshots.at(-1);
     if (!latest) return;
     const renderTick = Math.max(0, latest.tick - 3 + Math.min((this.time.now - this.receivedAt) / TICK_MS, 3));
@@ -156,14 +179,36 @@ export class NetworkGameScene extends Phaser.Scene {
         target.x += input.dx * scale * own.speed / 30;
         target.y += input.dy * scale * own.speed / 30;
       }
-      target.x = Phaser.Math.Clamp(target.x, 18, WIDTH - 18);
-      target.y = Phaser.Math.Clamp(target.y, 18, HEIGHT - 18);
+      target.x = Phaser.Math.Clamp(target.x, 18, MAP_WIDTH - 18);
+      target.y = Phaser.Math.Clamp(target.y, 18, MAP_HEIGHT - 18);
       if (Math.hypot(this.localPosition.x - target.x, this.localPosition.y - target.y) > 180) this.localPosition = target;
       else {
         const smooth = 1 - Math.exp(-delta / 45);
         this.localPosition.x = Phaser.Math.Linear(this.localPosition.x, target.x, smooth);
         this.localPosition.y = Phaser.Math.Linear(this.localPosition.y, target.y, smooth);
       }
+    }
+    if (this.localPosition) {
+      const camera = this.cameras.main;
+      if (!this.cameraReady) {
+        camera.centerOn(this.localPosition.x, this.localPosition.y);
+        this.cameraReady = true;
+      } else {
+        const smooth = 1 - Math.exp(-delta / 140);
+        camera.centerOn(Phaser.Math.Linear(camera.midPoint.x, this.localPosition.x, smooth),
+          Phaser.Math.Linear(camera.midPoint.y, this.localPosition.y, smooth));
+      }
+      this.game.canvas.dataset.cameraX = String(Math.round(camera.scrollX));
+    }
+    const unitPositions = new Map(older.units.map(unit => [unit.id, unit]));
+    for (const unit of newer.units) {
+      const previous = unitPositions.get(unit.id) || unit;
+      this.drawUnit(unit, Phaser.Math.Linear(previous.x, unit.x, alpha), Phaser.Math.Linear(previous.y, unit.y, alpha));
+    }
+    const unitIds = new Set(newer.units.map(unit => unit.id));
+    for (const [id, sprite] of this.unitSprites) if (!unitIds.has(id)) {
+      sprite.destroy();
+      this.unitSprites.delete(id);
     }
     const seen = new Set<string>();
     for (const player of newer.players) {
@@ -186,16 +231,76 @@ export class NetworkGameScene extends Phaser.Scene {
   }
 
   private drawMap(): void {
-    this.graphics.fillStyle(0x10213a);
-    this.graphics.fillRect(0, 0, WIDTH, HEIGHT);
-    this.graphics.lineStyle(3, 0x47708c);
-    this.graphics.strokeRect(3, 3, WIDTH - 6, HEIGHT - 6);
-    this.graphics.lineStyle(1, 0x32506b);
-    this.graphics.lineBetween(WIDTH / 2, 0, WIDTH / 2, HEIGHT);
-    this.graphics.fillStyle(0x234667, 0.35);
-    this.graphics.fillCircle(120, 360, 65);
-    this.graphics.fillStyle(0x663333, 0.35);
-    this.graphics.fillCircle(WIDTH - 120, 360, 65);
+    this.mapGraphics.fillStyle(0x122b28);
+    this.mapGraphics.fillRect(0, 0, MAP_WIDTH, MAP_HEIGHT);
+    this.mapGraphics.lineStyle(8, 0x35635c, 0.8);
+    this.mapGraphics.strokeRect(4, 4, MAP_WIDTH - 8, MAP_HEIGHT - 8);
+    // Stone paths form two diagonal lanes around one contested garden.
+    for (const lane of LANES) {
+      for (let index = 1; index < lane.points.length; index++) {
+        const from = lane.points[index - 1];
+        const to = lane.points[index];
+        this.mapGraphics.lineStyle(110, 0x283f3b).lineBetween(from.x, from.y, to.x, to.y);
+        this.mapGraphics.lineStyle(90, 0xa6a292).lineBetween(from.x, from.y, to.x, to.y);
+        this.mapGraphics.lineStyle(2, 0xcac4a6, 0.6).lineBetween(from.x, from.y, to.x, to.y);
+      }
+    }
+    this.mapGraphics.fillStyle(0x224744).fillEllipse(1600, 1000, 1700, 900);
+    this.mapGraphics.lineStyle(30, 0x4a858a, 0.65).lineBetween(1120, 350, 2130, 1640);
+    for (let i = 0; i < 48; i++) {
+      const x = 230 + i * 61 % 2740;
+      const y = 130 + i * 277 % 1700;
+      if (LANES.some(lane => lane.points.some(point => Math.hypot(point.x - x, point.y - y) < 145))) continue;
+      this.mapGraphics.fillStyle(i % 3 === 0 ? 0x8c6478 : 0x33594a, 0.8).fillCircle(x, y, 16 + i % 5 * 4);
+      this.mapGraphics.fillStyle(0xb59a69, 0.8).fillCircle(x - 5, y - 7, 4);
+    }
+    for (const camp of CAMPS) {
+      this.mapGraphics.lineStyle(3, 0xc7a86b, 0.75).strokeCircle(camp.x, camp.y, 70);
+      this.mapGraphics.fillStyle(0x7c463e).fillCircle(camp.x, camp.y, 10);
+    }
+    for (const shrine of SHRINES) {
+      this.mapGraphics.lineStyle(3, 0xffd68a).strokeCircle(shrine.x, shrine.y, 90);
+    }
+    this.mapGraphics.lineStyle(5, 0xb05258).strokeCircle(BOSS.x, BOSS.y, 110);
+  }
+
+  private drawUnit(unit: WorldUnit, x: number, y: number): void {
+    if (unit.hp <= 0) return;
+    const teamColor = unit.team === 1 ? 0x70bcff : unit.team === 2 ? 0xff8686 : 0xe6bc72;
+    const radius = unit.kind === 'boss' ? 38 : unit.kind === 'creep' ? 13 : unit.kind === 'neutral' ? 17 : 30;
+    if (unit.kind === 'tower') {
+      this.graphics.fillStyle(0x211e26).fillRect(x - 18, y - 35, 36, 62);
+      this.graphics.fillStyle(teamColor).fillTriangle(x - 28, y - 32, x + 28, y - 32, x, y - 66);
+    } else if (unit.kind === 'barracks') {
+      this.graphics.fillStyle(teamColor).fillRect(x - 28, y - 18, 56, 40);
+      this.graphics.fillStyle(0x26222a).fillTriangle(x - 36, y - 18, x + 36, y - 18, x, y - 48);
+    } else if (unit.kind === 'throne') {
+      this.graphics.fillStyle(teamColor).fillCircle(x, y, radius + 14);
+      this.graphics.fillStyle(0xf8e2a0).fillTriangle(x - 20, y - 22, x + 20, y - 22, x, y - 58);
+    } else if (unit.kind === 'fountain' || unit.kind === 'shrine') {
+      this.graphics.lineStyle(6, teamColor).strokeCircle(x, y, radius + 10);
+      this.graphics.fillStyle(teamColor, 0.6).fillCircle(x, y, radius);
+    } else {
+      this.graphics.fillStyle(0x141b22).fillCircle(x, y + 6, radius + 3);
+      this.graphics.fillStyle(teamColor).fillCircle(x, y, radius);
+      this.graphics.fillStyle(0xffffff, 0.8).fillCircle(x - radius / 3, y - radius / 3, radius / 4);
+      const asset = unit.kind === 'creep' ? `creep-${unit.team === 1 ? 'blue' : 'red'}`
+        : unit.kind === 'neutral' || unit.kind === 'boss' ? 'neutral-ghost' : undefined;
+      if (asset && this.textures.exists(`arena-${asset}`)) {
+        let sprite = this.unitSprites.get(unit.id);
+        if (!sprite) {
+          sprite = this.add.image(x, y, `arena-${asset}`).setDepth(2);
+          this.unitSprites.set(unit.id, sprite);
+        }
+        sprite.setPosition(x, y + Math.sin(this.time.now / 240 + unit.id) * 1.5);
+        sprite.setScale(unit.kind === 'boss' ? 4.5 : unit.kind === 'neutral' ? 2.6 : 2.3);
+        if (unit.kind === 'boss') sprite.setTint(0xff5555);
+      }
+    }
+    if (unit.kind !== 'fountain' && unit.kind !== 'shrine') {
+      this.graphics.fillStyle(0x152020).fillRect(x - 25, y - radius - 18, 50, 5);
+      this.graphics.fillStyle(teamColor).fillRect(x - 25, y - radius - 18, 50 * unit.hp / unit.maxHp, 5);
+    }
   }
 
   private drawPlayer(player: WorldPlayer, x: number, y: number): void {
@@ -258,9 +363,12 @@ export class NetworkGameScene extends Phaser.Scene {
         this.graphics.fillCircle(effect.x, effect.y, 24 + progress * 20);
       }
       const caster = this.snapshots.at(-1)?.players.find(player => player.id === effect.casterId);
+      const sourceUnit = this.snapshots.at(-1)?.units.find(unit => unit.id === effect.sourceUnitId);
       const rangedAttack = effect.kind === 'attack' && ['mage', 'support', 'marksman'].includes(caster?.heroId || '');
+      const unitProjectile = effect.kind === 'attack' && (sourceUnit?.kind === 'tower' || sourceUnit?.kind === 'creep');
       const asset = effect.kind === 'attack'
-        ? caster?.heroId === 'marksman' ? 'arrow' : rangedAttack ? 'spark' : 'slash'
+        ? caster?.heroId === 'marksman' || sourceUnit?.kind === 'creep' ? 'arrow'
+          : rangedAttack || sourceUnit?.kind === 'tower' ? 'spark' : 'slash'
         : effect.kind === 'meteor' || effect.kind === 'execute' ? 'flame'
           : effect.kind === 'heal' || effect.kind === 'revive' ? 'heal'
             : effect.kind === 'strike' ? 'slash' : 'spark';
@@ -271,13 +379,14 @@ export class NetworkGameScene extends Phaser.Scene {
         image = this.add.image(effect.x, effect.y, key).setDepth(3);
         this.effectImages.set(effect.id, image);
       }
-      const travel = rangedAttack && caster ? Math.min(1, progress / 0.35) : 1;
-      image.setPosition(caster && rangedAttack ? Phaser.Math.Linear(caster.x, effect.x, travel) : effect.x,
-        caster && rangedAttack ? Phaser.Math.Linear(caster.y, effect.y, travel) : effect.y);
-      image.setVisible(!rangedAttack || progress < 0.35);
+      const origin = caster && rangedAttack ? caster : unitProjectile ? sourceUnit : undefined;
+      const travel = origin ? Math.min(1, progress / 0.35) : 1;
+      image.setPosition(origin ? Phaser.Math.Linear(origin.x, effect.x, travel) : effect.x,
+        origin ? Phaser.Math.Linear(origin.y, effect.y, travel) : effect.y);
+      image.setVisible(!origin || progress < 0.35);
       image.setScale((effect.kind === 'meteor' ? 3.2 : 2.3) * (1 + progress * 0.5));
       image.setAlpha(1 - progress);
-      image.setRotation(rangedAttack && caster ? Math.atan2(effect.y - caster.y, effect.x - caster.x) + Math.PI / 2 : progress * 2);
+      image.setRotation(origin ? Math.atan2(effect.y - origin.y, effect.x - origin.x) + Math.PI / 2 : progress * 2);
     }
     for (const [id, image] of this.effectImages) {
       if (!active.has(id)) {

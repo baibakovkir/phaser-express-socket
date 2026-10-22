@@ -12,6 +12,7 @@ export interface GameEvents {
   'game:paused': () => void;
   'game:resumed': () => void;
   'game:over': (winner: string | null) => void;
+  'game:clock': (tick: number, bossAlive: boolean) => void;
   'ui:ability-cast': (abilityName: string, targetPosition?: { x: number; y: number }) => void;
   'ui:move-command': (x: number, y: number) => void;
   'loader:progress': (current: number, total: number, percent: number) => void;

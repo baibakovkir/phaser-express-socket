@@ -3,6 +3,7 @@ import { GameContainer, GameContainerHandle } from './components/GameContainer';
 import { Menu } from './components/Menu';
 import { HeroSelect } from './components/ChampionSelect';
 import { MobileControls } from './components/MobileControls';
+import { MatchHud } from './components/MatchHud';
 import { useGameStore } from './store/gameStore';
 import { EventBus } from './events/EventBus';
 
@@ -62,6 +63,7 @@ const App: React.FC = () => {
 
   return (
     <div className="relative flex min-h-dvh w-full flex-col bg-gray-900 md:h-full">
+      {phase === 'playing' && <MatchHud />}
       {/* Phaser Game - Hidden until playing */}
       <div className={phase === 'playing'
         ? touchDevice

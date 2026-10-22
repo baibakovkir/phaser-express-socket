@@ -3,6 +3,7 @@ import protocol from './generated/protocol.js';
 const { Input, Snapshot } = protocol.moba;
 const STATUS = { selecting: 0, playing: 1, finished: 2 };
 const STATUS_BY_NUMBER = ['selecting', 'playing', 'finished'];
+const UNIT_KINDS = ['creep', 'neutral', 'tower', 'barracks', 'throne', 'fountain', 'shrine', 'boss'];
 
 export function encodeInput(input) {
   return Input.encode({
@@ -47,12 +48,23 @@ export function encodeSnapshot(snapshot, playerIds) {
     })),
     effects: snapshot.effects.map(effect => ({
       id: effect.id,
-      caster: index.get(effect.casterId),
+      caster: effect.casterId ? (index.get(effect.casterId) ?? -1) + 1 : 0,
       kind: effect.kind,
       x: Math.round(effect.x),
       y: Math.round(effect.y),
       target: effect.targetId ? (index.get(effect.targetId) ?? -1) + 1 : 0,
       tick: effect.tick,
+      sourceUnit: effect.sourceUnitId || 0,
+    })),
+    units: snapshot.units.map(unit => ({
+      id: unit.id,
+      kind: UNIT_KINDS.indexOf(unit.kind) + 1,
+      team: unit.team,
+      lane: unit.lane,
+      x: Math.round(unit.x),
+      y: Math.round(unit.y),
+      hp: unit.hp,
+      maxHp: unit.maxHp,
     })),
   }).finish();
 }
@@ -86,16 +98,31 @@ export function decodeSnapshot(data, matchId, participants) {
       };
     }),
     effects: message.effects.map(effect => {
-      const caster = participants[effect.caster];
-      if (!caster) throw new Error('Invalid effect caster index');
+      const caster = effect.caster ? participants[effect.caster - 1] : undefined;
+      if (effect.caster && !caster) throw new Error('Invalid effect caster index');
       return {
         id: effect.id,
-        casterId: caster.playerId,
+        ...(caster ? { casterId: caster.playerId } : {}),
+        ...(effect.sourceUnit ? { sourceUnitId: effect.sourceUnit } : {}),
         kind: effect.kind,
         x: effect.x,
         y: effect.y,
         ...(effect.target ? { targetId: participants[effect.target - 1]?.playerId } : {}),
         tick: effect.tick,
+      };
+    }),
+    units: message.units.map(unit => {
+      const kind = UNIT_KINDS[unit.kind - 1];
+      if (!kind) throw new Error('Invalid unit kind');
+      return {
+        id: unit.id,
+        kind,
+        team: unit.team,
+        lane: unit.lane,
+        x: unit.x,
+        y: unit.y,
+        hp: unit.hp,
+        maxHp: unit.maxHp,
       };
     }),
   };

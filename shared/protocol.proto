@@ -18,6 +18,18 @@ message Effect {
   sint32 y = 5;
   uint32 target = 6;
   uint32 tick = 7;
+  uint32 source_unit = 8;
+}
+
+message Unit {
+  uint32 id = 1;
+  uint32 kind = 2;
+  uint32 team = 3;
+  uint32 lane = 4;
+  sint32 x = 5;
+  sint32 y = 6;
+  uint32 hp = 7;
+  uint32 max_hp = 8;
 }
 
 message PlayerState {
@@ -41,4 +53,5 @@ message Snapshot {
   uint32 winner_team = 3;
   repeated PlayerState players = 4;
   repeated Effect effects = 5;
+  repeated Unit units = 6;
 }

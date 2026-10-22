@@ -9,6 +9,10 @@
     "./codec": {
       "types": "./codec.d.ts",
       "default": "./codec.js"
+    },
+    "./map": {
+      "types": "./map.d.ts",
+      "default": "./map.js"
     }
   },
   "scripts": {

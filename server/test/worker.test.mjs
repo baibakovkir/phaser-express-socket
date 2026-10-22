@@ -31,8 +31,8 @@ test('compiled match worker owns ticks and rejects client coordinates', async ()
     });
     const latest = snapshots.at(-1);
     assert.equal(latest.status, 'playing');
-    assert.ok(latest.players[0].x > 120);
-    assert.ok(latest.players[0].x < 200);
+    assert.ok(latest.players[0].x > 320);
+    assert.ok(latest.players[0].x < 380);
   } finally {
     await worker.terminate();
   }

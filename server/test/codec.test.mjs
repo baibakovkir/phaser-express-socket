@@ -15,7 +15,11 @@ test('protobuf round trip keeps authoritative fields in a smaller snapshot', () 
   const snapshot = {
     matchId: 'match-uuid', tick: 128, status: 'playing',
     players: [player(participants[0], 151), player(participants[1], 1101)],
-    effects: [{ id: 1, casterId: participants[0].playerId, kind: 'nova', x: 300, y: 260, targetId: participants[1].playerId, tick: 126 }],
+    effects: [
+      { id: 1, casterId: participants[0].playerId, kind: 'nova', x: 300, y: 260, targetId: participants[1].playerId, tick: 126 },
+      { id: 2, sourceUnitId: 1, kind: 'attack', x: 1100, y: 250, targetId: participants[1].playerId, tick: 127 },
+    ],
+    units: [{ id: 1, kind: 'tower', team: 1, lane: 1, x: 430, y: 1210, hp: 650, maxHp: 650 }],
   };
   const bytes = encodeSnapshot(snapshot, participants.map(item => item.playerId));
   assert.ok(bytes.byteLength < Buffer.byteLength(JSON.stringify(snapshot)) / 2);

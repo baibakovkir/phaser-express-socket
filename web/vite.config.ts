@@ -6,9 +6,9 @@ export default defineConfig({
   server: {
     port: 5174,
     proxy: {
-      '/auth': 'http://localhost:3000',
-      '/heroes': 'http://localhost:3000',
-      '/api': 'http://localhost:3000',
+      '/auth': process.env.VITE_SERVER_URL || 'http://localhost:3000',
+      '/heroes': process.env.VITE_SERVER_URL || 'http://localhost:3000',
+      '/api': process.env.VITE_SERVER_URL || 'http://localhost:3000',
     },
   },
 });

@@ -37,7 +37,8 @@ export interface WorldPlayer {
 
 export interface WorldEffect {
   id: number;
-  casterId: string;
+  casterId?: string;
+  sourceUnitId?: number;
   kind: string;
   x: number;
   y: number;
@@ -45,11 +46,25 @@ export interface WorldEffect {
   tick: number;
 }
 
+export type UnitKind = 'creep' | 'neutral' | 'tower' | 'barracks' | 'throne' | 'fountain' | 'shrine' | 'boss';
+
+export interface WorldUnit {
+  id: number;
+  kind: UnitKind;
+  team: 0 | 1 | 2;
+  lane: number;
+  x: number;
+  y: number;
+  hp: number;
+  maxHp: number;
+}
+
 export interface WorldSnapshot {
   matchId: string;
   tick: number;
   status: 'selecting' | 'playing' | 'finished';
   players: WorldPlayer[];
+  units: WorldUnit[];
   effects: WorldEffect[];
   winnerTeam?: 1 | 2;
 }
