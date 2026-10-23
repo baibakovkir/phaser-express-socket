@@ -56,7 +56,7 @@ export function MobileControls() {
           role="group"
           aria-label="Move joystick"
           data-testid="move-joystick"
-          className="pointer-events-auto absolute bottom-4 left-4 h-28 w-28 rounded-full border-2 border-cyan-400 bg-slate-950/70 shadow-lg touch-none select-none"
+          className="pointer-events-auto absolute bottom-4 left-4 h-28 w-28 rounded-full border-2 border-amber-300 bg-[#1a2d30]/85 shadow-lg touch-none select-none"
           onPointerDown={event => {
             if (activePointer.current !== null) return;
             activePointer.current = event.pointerId;
@@ -68,13 +68,13 @@ export function MobileControls() {
           onPointerCancel={releaseStick}
           onLostPointerCapture={releaseStick}
         >
-          <div className="pointer-events-none absolute left-1/2 top-1/2 h-12 w-12 rounded-full border border-cyan-200 bg-cyan-600/80" style={{ transform: `translate(calc(-50% + ${stick.x}px), calc(-50% + ${stick.y}px))` }} />
+          <div className="pointer-events-none absolute left-1/2 top-1/2 h-12 w-12 rounded-full border border-amber-100 bg-amber-700/80" style={{ transform: `translate(calc(-50% + ${stick.x}px), calc(-50% + ${stick.y}px))` }} />
         </div>
         <div className="pointer-events-auto absolute bottom-4 right-4 flex flex-col items-end gap-2">
           <button
             type="button"
             aria-label="Select next target"
-            className="h-10 min-w-24 rounded-lg border border-amber-300 bg-slate-950/80 px-3 text-xs font-bold touch-none select-none"
+            className="min-h-11 min-w-24 rounded-lg border border-amber-300 bg-[#1a2d30]/85 px-3 text-xs font-bold touch-none select-none"
             onPointerDown={() => EventBus.emit('ui:cycle-target')}
           >
             Target

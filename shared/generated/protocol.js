@@ -458,6 +458,10 @@ export const moba = $root.moba = (() => {
          * @property {number|null} [tick] Effect tick
          * @property {number|null} [sourceUnit] Effect sourceUnit
          * @property {number|null} [amount] Effect amount
+         * @property {string|null} [abilityKey] Effect abilityKey
+         * @property {number|null} [originX] Effect originX
+         * @property {number|null} [originY] Effect originY
+         * @property {boolean|null} [hasOrigin] Effect hasOrigin
          */
 
         /**
@@ -548,6 +552,38 @@ export const moba = $root.moba = (() => {
         Effect.prototype.amount = 0;
 
         /**
+         * Effect abilityKey.
+         * @member {string} abilityKey
+         * @memberof moba.Effect
+         * @instance
+         */
+        Effect.prototype.abilityKey = "";
+
+        /**
+         * Effect originX.
+         * @member {number} originX
+         * @memberof moba.Effect
+         * @instance
+         */
+        Effect.prototype.originX = 0;
+
+        /**
+         * Effect originY.
+         * @member {number} originY
+         * @memberof moba.Effect
+         * @instance
+         */
+        Effect.prototype.originY = 0;
+
+        /**
+         * Effect hasOrigin.
+         * @member {boolean} hasOrigin
+         * @memberof moba.Effect
+         * @instance
+         */
+        Effect.prototype.hasOrigin = false;
+
+        /**
          * Creates a new Effect instance using the specified properties.
          * @function create
          * @memberof moba.Effect
@@ -593,6 +629,14 @@ export const moba = $root.moba = (() => {
                 writer.uint32(/* id 8, wireType 0 =*/64).uint32(message.sourceUnit);
             if (message.amount != null && Object.hasOwnProperty.call(message, "amount"))
                 writer.uint32(/* id 9, wireType 0 =*/72).uint32(message.amount);
+            if (message.abilityKey != null && Object.hasOwnProperty.call(message, "abilityKey"))
+                writer.uint32(/* id 10, wireType 2 =*/82).string(message.abilityKey);
+            if (message.originX != null && Object.hasOwnProperty.call(message, "originX"))
+                writer.uint32(/* id 11, wireType 0 =*/88).sint32(message.originX);
+            if (message.originY != null && Object.hasOwnProperty.call(message, "originY"))
+                writer.uint32(/* id 12, wireType 0 =*/96).sint32(message.originY);
+            if (message.hasOrigin != null && Object.hasOwnProperty.call(message, "hasOrigin"))
+                writer.uint32(/* id 13, wireType 0 =*/104).bool(message.hasOrigin);
             return writer;
         };
 
@@ -679,6 +723,22 @@ export const moba = $root.moba = (() => {
                         message.amount = reader.uint32();
                         break;
                     }
+                case 10: {
+                        message.abilityKey = reader.string();
+                        break;
+                    }
+                case 11: {
+                        message.originX = reader.sint32();
+                        break;
+                    }
+                case 12: {
+                        message.originY = reader.sint32();
+                        break;
+                    }
+                case 13: {
+                        message.hasOrigin = reader.bool();
+                        break;
+                    }
                 default:
                     reader.skipType(tag & 7, long);
                     break;
@@ -750,6 +810,18 @@ export const moba = $root.moba = (() => {
             if (message.amount != null && Object.hasOwnProperty.call(message, "amount"))
                 if (!$util.isInteger(message.amount))
                     return "amount: integer expected";
+            if (message.abilityKey != null && Object.hasOwnProperty.call(message, "abilityKey"))
+                if (!$util.isString(message.abilityKey))
+                    return "abilityKey: string expected";
+            if (message.originX != null && Object.hasOwnProperty.call(message, "originX"))
+                if (!$util.isInteger(message.originX))
+                    return "originX: integer expected";
+            if (message.originY != null && Object.hasOwnProperty.call(message, "originY"))
+                if (!$util.isInteger(message.originY))
+                    return "originY: integer expected";
+            if (message.hasOrigin != null && Object.hasOwnProperty.call(message, "hasOrigin"))
+                if (typeof message.hasOrigin !== "boolean")
+                    return "hasOrigin: boolean expected";
             return null;
         };
 
@@ -789,6 +861,14 @@ export const moba = $root.moba = (() => {
                 message.sourceUnit = object.sourceUnit >>> 0;
             if (object.amount != null)
                 message.amount = object.amount >>> 0;
+            if (object.abilityKey != null)
+                message.abilityKey = String(object.abilityKey);
+            if (object.originX != null)
+                message.originX = object.originX | 0;
+            if (object.originY != null)
+                message.originY = object.originY | 0;
+            if (object.hasOrigin != null)
+                message.hasOrigin = Boolean(object.hasOrigin);
             return message;
         };
 
@@ -819,6 +899,10 @@ export const moba = $root.moba = (() => {
                 object.tick = 0;
                 object.sourceUnit = 0;
                 object.amount = 0;
+                object.abilityKey = "";
+                object.originX = 0;
+                object.originY = 0;
+                object.hasOrigin = false;
             }
             if (message.id != null && Object.hasOwnProperty.call(message, "id"))
                 object.id = message.id;
@@ -838,6 +922,14 @@ export const moba = $root.moba = (() => {
                 object.sourceUnit = message.sourceUnit;
             if (message.amount != null && Object.hasOwnProperty.call(message, "amount"))
                 object.amount = message.amount;
+            if (message.abilityKey != null && Object.hasOwnProperty.call(message, "abilityKey"))
+                object.abilityKey = message.abilityKey;
+            if (message.originX != null && Object.hasOwnProperty.call(message, "originX"))
+                object.originX = message.originX;
+            if (message.originY != null && Object.hasOwnProperty.call(message, "originY"))
+                object.originY = message.originY;
+            if (message.hasOrigin != null && Object.hasOwnProperty.call(message, "hasOrigin"))
+                object.hasOrigin = message.hasOrigin;
             return object;
         };
 

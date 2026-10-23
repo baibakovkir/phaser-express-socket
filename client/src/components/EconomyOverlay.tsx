@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ItemDefinition, WorldPlayer } from '@moba/shared';
 import { EventBus } from '../events/EventBus';
 import { network } from '../network/socket';
+import { ItemIcon } from '../assets/SengokuIcon';
 
 interface Props { matchId: string; items: ItemDefinition[] }
 
@@ -79,8 +80,9 @@ export function EconomyOverlay({ matchId, items }: Props) {
           <button key={index} type="button" aria-label={`Use ${item.name} slot ${index + 1}`}
             disabled={busy || tick < slot.readyTick}
             onClick={() => void act('use', index)}
-            className="pointer-events-auto min-h-11 min-w-14 rounded border border-cyan-300 bg-slate-950/90 px-2 text-xs font-bold text-white disabled:opacity-50">
-            {item.name}<span className="block">{tick < slot.readyTick ? `${Math.ceil((slot.readyTick - tick) / 30)}s` : ['Z', 'X', 'C', 'V'][activeIndex] || 'Tap'}</span>
+            className="pointer-events-auto flex min-h-11 min-w-14 flex-col items-center rounded border border-amber-300 bg-slate-950/90 px-2 py-1 text-xs font-bold text-white disabled:opacity-50">
+            <ItemIcon itemId={item.id} className="h-7 w-7" />
+            <span className="max-w-16 truncate">{item.name}</span><span>{tick < slot.readyTick ? `${Math.ceil((slot.readyTick - tick) / 30)}s` : ['Z', 'X', 'C', 'V'][activeIndex] || 'Tap'}</span>
           </button>
         ))}
       </div>
@@ -104,8 +106,8 @@ export function EconomyOverlay({ matchId, items }: Props) {
                   available.splice(slot, 1);
                   return sum + entry.price;
                 }, 0);
-                return <div key={item.id} className="rounded border border-slate-600 bg-slate-800 p-2 text-xs">
-                  <div className="flex items-start justify-between gap-2"><strong className="text-sm text-amber-100">{item.name}</strong><span>{item.price} gold</span></div>
+                return <div key={item.id} className="rounded border border-amber-800 bg-slate-800 p-2 text-xs">
+                  <div className="flex items-start justify-between gap-2"><div className="flex items-center gap-2"><ItemIcon itemId={item.id} className="h-9 w-9 shrink-0" /><strong className="text-sm text-amber-100">{item.name}</strong></div><span>{item.price} gold</span></div>
                   <p>{describeStats(item.stats)}</p>
                   {components.length > 0 && <p className="text-slate-300">Recipe: {components.map(entry => entry.name).join(' + ')}</p>}
                   {item.activeKind && <p className="text-cyan-200">Active: {item.description} {item.cooldown}s cooldown</p>}

@@ -360,10 +360,10 @@ export class MatchWorld {
         player.x = x;
         player.y = y;
       }
-      this.effect(player, 'dash', player.x, player.y);
+      this.effect(player, 'dash', player.x, player.y, undefined, key);
     } else if (key === '1' && player.heroId === 'fighter' && ability.damage === 0) {
       player.attackSpeedUntil = this.tick + 120;
-      this.effect(player, 'buff', player.x, player.y);
+      this.effect(player, 'buff', player.x, player.y, undefined, key);
     } else if (key === '2') {
       if (player.heroId === 'support') {
         const target = players.filter(other => other.team === player.team && other.hp > 0 && inRange(other) &&
@@ -372,14 +372,14 @@ export class MatchWorld {
         if (!target) used = false;
         else {
           target.hp = Math.min(target.maxHp, target.hp + 100);
-          this.effect(player, 'heal', target.x, target.y, target.id);
+          this.effect(player, 'heal', target.x, target.y, target.id, key);
         }
       } else if (player.heroId === 'mage' || player.heroId === 'assassin') {
         player.shield += player.heroId === 'mage' ? 140 : 80;
-        this.effect(player, 'shield', player.x, player.y);
+        this.effect(player, 'shield', player.x, player.y, undefined, key);
       } else {
         player.attackBoostUntil = this.tick + 120;
-        this.effect(player, 'buff', player.x, player.y);
+        this.effect(player, 'buff', player.x, player.y, undefined, key);
       }
     } else if (key === '3' && player.heroId === 'support') {
       const target = this.tick < LAST_STAND_TICK ? players.find(other => other.team === player.team && other.hp === 0 &&
@@ -389,7 +389,7 @@ export class MatchWorld {
         target.hp = Math.ceil(target.maxHp * 0.4);
         target.x = player.x + 35;
         target.y = player.y;
-        this.effect(player, 'revive', target.x, target.y, target.id);
+        this.effect(player, 'revive', target.x, target.y, target.id, key);
       }
     } else if ((key === '1' && ['mage', 'marksman'].includes(player.heroId)) ||
                (key === '3' && ['warrior', 'mage', 'marksman'].includes(player.heroId))) {
@@ -400,16 +400,16 @@ export class MatchWorld {
         Math.hypot(unit.x - aim.x, unit.y - aim.y) <= radius)) {
         this.units.damageUnit(player.team, target.id, ability.damage, this.tick, player.id);
       }
-      this.effect(player, key === '3' ? 'meteor' : 'nova', aim.x, aim.y);
+      this.effect(player, key === '3' ? 'meteor' : 'nova', aim.x, aim.y, undefined, key);
     } else if (aimedEnemy) {
       const damage = player.heroId === 'fighter' && key === '3' && aimedEnemy.hp < aimedEnemy.maxHp * 0.35
         ? ability.damage * 1.5 : ability.damage;
       if ('kind' in aimedEnemy) this.units.damageUnit(player.team, aimedEnemy.id, damage, this.tick, player.id);
       else this.applyDamage(player, aimedEnemy, damage);
       this.effect(player, key === '3' ? 'execute' : 'strike', aimedEnemy.x, aimedEnemy.y,
-        'kind' in aimedEnemy ? undefined : aimedEnemy.id);
+        'kind' in aimedEnemy ? undefined : aimedEnemy.id, key);
     } else {
-      this.effect(player, key === '3' ? 'execute' : 'strike', aim.x, aim.y);
+      this.effect(player, key === '3' ? 'execute' : 'strike', aim.x, aim.y, undefined, key);
     }
     if (!used) return;
     player.mana -= ability.manaCost;
@@ -455,12 +455,15 @@ export class MatchWorld {
     }
   }
 
-  private effect(caster: PlayerState, kind: string, x: number, y: number, targetId?: string): void {
-    this.effects.push({ id: this.nextEffectId++, casterId: caster.id, kind, x, y, targetId, tick: this.tick });
+  private effect(caster: PlayerState, kind: string, x: number, y: number, targetId?: string, abilityKey?: WorldEffect['abilityKey']): void {
+    this.effects.push({ id: this.nextEffectId++, casterId: caster.id, kind, x, y, targetId,
+      abilityKey, originX: caster.x, originY: caster.y, tick: this.tick });
   }
 
   private unitEffect(sourceUnitId: number, kind: string, x: number, y: number, targetId?: string): void {
-    this.effects.push({ id: this.nextEffectId++, sourceUnitId, kind, x, y, targetId, tick: this.tick });
+    const source = this.units.units.get(sourceUnitId);
+    this.effects.push({ id: this.nextEffectId++, sourceUnitId, kind, x, y, targetId, tick: this.tick,
+      ...(source ? { originX: source.x, originY: source.y } : {}) });
   }
 
   snapshot(): WorldSnapshot {

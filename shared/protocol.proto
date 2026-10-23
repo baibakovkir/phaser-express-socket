@@ -24,6 +24,10 @@ message Effect {
   uint32 tick = 7;
   uint32 source_unit = 8;
   uint32 amount = 9;
+  string ability_key = 10;
+  sint32 origin_x = 11;
+  sint32 origin_y = 12;
+  bool has_origin = 13;
 }
 
 message Unit {

@@ -70,6 +70,9 @@ export interface WorldEffect {
   targetId?: string;
   tick: number;
   amount?: number;
+  abilityKey?: 'Q' | '1' | '2' | '3';
+  originX?: number;
+  originY?: number;
 }
 
 export type UnitKind = 'creep' | 'neutral' | 'tower' | 'barracks' | 'throne' | 'fountain' | 'shrine' | 'boss';

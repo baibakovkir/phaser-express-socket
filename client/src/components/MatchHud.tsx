@@ -27,7 +27,7 @@ export function MatchHud() {
     : state.bossAlive ? 'alive' : 'respawning';
 
   return (
-    <div aria-label="Match timer" className="pointer-events-none absolute left-1/2 top-2 z-10 flex max-w-[65%] -translate-x-1/2 flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-lg border border-amber-600/50 bg-slate-950/90 px-3 py-1 text-center text-xs font-semibold text-amber-100">
+    <div aria-label="Match timer" className="pointer-events-none absolute left-1/2 top-2 z-10 flex max-w-[65%] -translate-x-1/2 flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-lg border border-amber-400/70 bg-[#172b30]/95 px-3 py-1 text-center text-xs font-semibold text-amber-100 shadow-lg">
       <strong className="text-base text-white">{clock(seconds)}</strong>
       <span>Lane {clock(lane)}</span>
       <span>Jungle {clock(jungle)}</span>

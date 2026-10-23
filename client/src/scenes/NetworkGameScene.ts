@@ -1,10 +1,13 @@
 import Phaser from 'phaser';
 import type { GameInput, MatchFound, WorldEffect, WorldPlayer, WorldSnapshot, WorldUnit } from '@moba/shared';
 import { decodeSnapshot } from '@moba/shared/codec';
-import { BASES, BOSS, BOSS_SPAWN_TICKS, CAMPS, JUNGLE_SPAWN_TICKS, LANES, LANE_WAVE_TICKS, MAP_HEIGHT, MAP_WIDTH, SHRINES, TICKS_PER_SECOND, nextSpawnSecond } from '@moba/shared/map';
+import { BASES, BOSS, CAMPS, LANES, MAP_HEIGHT, MAP_WIDTH, SHRINES } from '@moba/shared/map';
 import { network } from '../network/socket';
 import { mobileInput, queueMobileCast, resetMobileInput, takeMobileCast } from '../input/mobileInput';
-import { EFFECT_SPRITES, HERO_SPRITES, spriteUrl } from '../assets/heroSprites';
+import { HERO_SPRITES } from '../assets/heroSprites';
+import { registerArenaSprites } from '../assets/arenaSprites';
+import { registerArenaTerrain } from '../assets/arenaTerrain';
+import { registerSengokuHeroes, type HeroDirection, type HeroMotion } from '../assets/sengokuSprites';
 import { EventBus } from '../events/EventBus';
 
 const TICK_MS = 1000 / 30;
@@ -23,11 +26,13 @@ export class NetworkGameScene extends Phaser.Scene {
   private aimPreview?: AbilityAim;
   private statusText!: Phaser.GameObjects.Text;
   private labels = new Map<string, Phaser.GameObjects.Text>();
-  private playerSprites = new Map<string, Phaser.GameObjects.Image>();
+  private playerSprites = new Map<string, Phaser.GameObjects.Sprite>();
+  private playerDirections = new Map<string, HeroDirection>();
   private unitSprites = new Map<number, Phaser.GameObjects.Image>();
   private effectImages = new Map<number, Phaser.GameObjects.Image>();
   private coinLabels = new Map<number, Phaser.GameObjects.Text>();
   private lastRenderPositions = new Map<string, { x: number; y: number }>();
+  private playerHitUntil = new Map<string, number>();
   private cameraReady = false;
   private snapshots: WorldSnapshot[] = [];
   private receivedAt = 0;
@@ -36,7 +41,7 @@ export class NetworkGameScene extends Phaser.Scene {
   private selectedUnitId?: number;
   private localPosition?: { x: number; y: number };
   private readonly onSnapshot = (data: unknown) => this.receiveSnapshot(data);
-  private readonly onAbort = () => this.statusText.setText('Match interrupted');
+  private readonly onAbort = () => this.statusText.setVisible(true).setText('Match interrupted');
   private readonly onCycleTarget = () => this.cycleTarget();
   private readonly onPointerDown = (pointer: Phaser.Input.Pointer) => this.selectUnitAt(pointer.worldX, pointer.worldY);
   private readonly onAbilityAim = (aim: AbilityAim) => {
@@ -57,12 +62,6 @@ export class NetworkGameScene extends Phaser.Scene {
     super({ key: 'NetworkGameScene' });
   }
 
-  preload(): void {
-    for (const name of [...Object.values(HERO_SPRITES), ...EFFECT_SPRITES, 'creep-blue', 'creep-red', 'neutral-ghost']) {
-      this.load.image(`arena-${name}`, spriteUrl(name));
-    }
-  }
-
   init(data: MatchFound): void {
     this.matchId = data.matchId;
     this.participants = data.participants || [];
@@ -77,10 +76,10 @@ export class NetworkGameScene extends Phaser.Scene {
   }
 
   create(): void {
-    for (const name of [...Object.values(HERO_SPRITES), ...EFFECT_SPRITES, 'creep-blue', 'creep-red', 'neutral-ghost']) {
-      const texture = this.textures.get(`arena-${name}`);
-      if (texture.key !== '__MISSING') texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
-    }
+    registerSengokuHeroes(this);
+    registerArenaSprites(this);
+    registerArenaTerrain(this);
+    this.add.tileSprite(0, 0, MAP_WIDTH, MAP_HEIGHT, 'arena-ground').setOrigin(0).setDepth(-2);
     this.mapGraphics = this.add.graphics().setDepth(-1);
     this.graphics = this.add.graphics();
     this.aimGraphics = this.add.graphics().setDepth(5);
@@ -113,6 +112,7 @@ export class NetworkGameScene extends Phaser.Scene {
       for (const label of this.coinLabels.values()) label.destroy();
       this.coinLabels.clear();
       this.lastRenderPositions.clear();
+      this.playerHitUntil.clear();
       delete this.game.canvas.dataset.gameReady;
       delete this.game.canvas.dataset.serverX;
       delete this.game.canvas.dataset.serverTick;
@@ -142,6 +142,12 @@ export class NetworkGameScene extends Phaser.Scene {
     }
     const last = this.snapshots.at(-1);
     if (last && snapshot.tick < last.tick) return;
+    if (last) {
+      for (const player of snapshot.players) {
+        const before = last.players.find(previous => previous.id === player.id);
+        if (before && player.hp > 0 && player.hp < before.hp) this.playerHitUntil.set(player.id, this.time.now + 250);
+      }
+    }
     this.snapshots.push(snapshot);
     if (this.snapshots.length > 8) this.snapshots.shift();
     this.receivedAt = this.time.now;
@@ -170,17 +176,11 @@ export class NetworkGameScene extends Phaser.Scene {
     if (snapshot.effects.some(effect => effect.kind !== 'attack' && effect.casterId === this.playerId)) {
       this.game.canvas.dataset.castTick = String(snapshot.tick);
     }
-    const seconds = Math.floor(snapshot.tick / TICKS_PER_SECOND);
-    const clock = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
-    const lane = nextSpawnSecond(snapshot.tick, LANE_WAVE_TICKS);
-    const jungle = nextSpawnSecond(snapshot.tick, JUNGLE_SPAWN_TICKS);
-    const boss = snapshot.tick < BOSS_SPAWN_TICKS ? '02:00' : snapshot.units.some(unit => unit.kind === 'boss') ? 'alive' : 'respawning';
     EventBus.emit('game:clock', snapshot.tick, snapshot.units.some(unit => unit.kind === 'boss'));
+    this.statusText.setVisible(snapshot.status !== 'playing');
     this.statusText.setText(snapshot.status === 'finished'
       ? snapshot.winnerTeam ? `Team ${snapshot.winnerTeam} wins · refresh to play again` : 'Draw · 30:00 · refresh to play again'
-      : snapshot.status === 'selecting'
-        ? 'Waiting for hero selections...'
-        : `${clock}  ·  Lane ${lane}s  ·  Jungle ${jungle}s  ·  Oni ${boss}\nWASD move · attacks automatic · drag a skill icon to aim`);
+      : 'Waiting for hero selections...');
   }
 
   private sendInput(): void {
@@ -266,6 +266,8 @@ export class NetworkGameScene extends Phaser.Scene {
         this.playerSprites.get(id)?.destroy();
         this.playerSprites.delete(id);
         this.lastRenderPositions.delete(id);
+        this.playerDirections.delete(id);
+        this.playerHitUntil.delete(id);
       }
     }
   }
@@ -329,11 +331,11 @@ export class NetworkGameScene extends Phaser.Scene {
 
   private drawMap(): void {
     const ground = this.mapGraphics;
-    ground.fillStyle(0x243c36).fillRect(0, 0, MAP_WIDTH, MAP_HEIGHT);
-    ground.fillStyle(0x183b36).fillRect(0, 0, MAP_WIDTH, 990);
-    ground.fillStyle(0x2e4739, 0.8).fillEllipse(1600, 360, 2800, 1150);
-    ground.fillStyle(0x3d513e, 0.65).fillEllipse(1600, 1770, 2900, 400);
-    ground.lineStyle(7, 0x83a5a0, 0.7).strokeRect(4, 4, MAP_WIDTH - 8, MAP_HEIGHT - 8);
+    ground.fillStyle(0x183b36, 0.65).fillRect(0, 0, MAP_WIDTH, 990);
+    ground.fillStyle(0x2e4739, 0.35).fillEllipse(1600, 360, 2800, 1150);
+    ground.fillStyle(0x486044, 0.35).fillEllipse(1600, 1770, 2900, 400);
+    ground.lineStyle(12, 0x253a34, 0.8).strokeRect(4, 4, MAP_WIDTH - 8, MAP_HEIGHT - 8);
+    ground.lineStyle(3, 0xc1aa77, 0.6).strokeRect(14, 14, MAP_WIDTH - 28, MAP_HEIGHT - 28);
 
     // The upper wilderness is one contiguous contested area, with a stream between camps.
     const stream = [{ x: 180, y: 770 }, { x: 740, y: 680 }, { x: 1390, y: 770 },
@@ -341,6 +343,7 @@ export class NetworkGameScene extends Phaser.Scene {
     this.strokeRoute(stream, 90, 0x183c42);
     this.strokeRoute(stream, 68, 0x387d84);
     this.strokeRoute(stream, 42, 0x57969a);
+    this.strokeRoute(stream, 7, 0x91b9ad);
 
     for (const lane of LANES) {
       this.strokeRoute(lane.path, 200, 0x1a302c);
@@ -348,9 +351,18 @@ export class NetworkGameScene extends Phaser.Scene {
       this.strokeRoute(lane.path, 166, 0x827e69);
       this.strokeRoute(lane.path, 146, 0xaaa48c);
       this.strokeRoute(lane.path, 112, 0xb8b19b);
-      for (let index = 4; index < lane.path.length - 4; index += 6) {
+      this.strokeRoute(lane.path, 4, 0xd6c7a4);
+      for (let index = 4; index < lane.path.length - 4; index += 4) {
         const point = lane.path[index];
-        ground.fillStyle(0xd4c9a8, 0.42).fillCircle(point.x, point.y, 8);
+        const before = lane.path[Math.max(0, index - 2)];
+        const after = lane.path[Math.min(lane.path.length - 1, index + 2)];
+        const angle = Math.atan2(after.y - before.y, after.x - before.x) + Math.PI / 2;
+        for (const offset of [-55, 55]) {
+          const x = point.x + Math.cos(angle) * offset;
+          const y = point.y + Math.sin(angle) * offset;
+          ground.fillStyle(index % 3 ? 0xbab198 : 0xd1c7aa, 0.65).fillEllipse(x, y, 22, 10);
+          ground.lineStyle(2, 0x837d68, 0.45).strokeEllipse(x, y, 22, 10);
+        }
       }
     }
 
@@ -361,15 +373,17 @@ export class NetworkGameScene extends Phaser.Scene {
       const clearCamp = CAMPS.every(camp => Math.hypot(camp.x - x, camp.y - y) > 105);
       if (!clearRoad || !clearCamp || Math.hypot(BOSS.x - x, BOSS.y - y) < 165) continue;
       const radius = 21 + index % 5 * 5;
-      ground.fillStyle(0x142f2b, 0.7).fillEllipse(x + 8, y + 9, radius * 2.2, radius * 1.2);
-      ground.fillStyle(index % 7 === 0 ? 0x91677c : 0x3a6652).fillCircle(x, y, radius);
-      ground.fillStyle(index % 7 === 0 ? 0xc28da1 : 0x629071, 0.75).fillCircle(x - 7, y - 8, radius * 0.48);
+      if (index % 7 === 0) this.drawSakura(x, y, radius);
+      else this.drawBamboo(x, y, radius);
     }
+    for (const x of [430, 990, 1430, 1870, 2310, 2760]) this.drawLantern(x, 905);
+    this.drawBridge(1590, 730);
     for (const camp of CAMPS) {
       ground.fillStyle(0x504e3d, 0.85).fillCircle(camp.x, camp.y, 78);
       ground.lineStyle(6, 0xe5c884, 0.75).strokeCircle(camp.x, camp.y, 72);
       ground.fillStyle(0x735049).fillCircle(camp.x, camp.y, 13);
       ground.fillStyle(0xf2c878, 0.75).fillCircle(camp.x, camp.y, 6);
+      this.drawLantern(camp.x + 65, camp.y - 62);
     }
     for (const shrine of SHRINES) {
       ground.fillStyle(0x2b5148, 0.85).fillCircle(shrine.x, shrine.y, 88);
@@ -387,12 +401,15 @@ export class NetworkGameScene extends Phaser.Scene {
       ground.fillStyle(color, 0.12).fillCircle(x, y, 145);
       ground.lineStyle(4, color, 0.7).strokeCircle(x, y, 145);
       ground.lineStyle(4, 0xffd27d, 0.8).strokeCircle(x, y, 180);
+      ground.fillStyle(0x594c3d, 0.55).fillEllipse(x, y + 77, 290, 170);
+      ground.lineStyle(4, 0xc4a97a, 0.8).strokeEllipse(x, y + 77, 290, 170);
       for (let i = 0; i < 8; i++) {
         const angle = i * Math.PI / 4;
         ground.fillStyle(0xffd27d).fillCircle(x + Math.cos(angle) * 180, y + Math.sin(angle) * 180, 5);
       }
       this.add.text(x, y - 115, 'HEAL', { fontSize: '18px', color: '#c7fff1', backgroundColor: '#153e39cc', padding: { x: 5, y: 2 } }).setOrigin(0.5).setDepth(-0.5);
       this.add.text(x, y + 130, 'SHOP', { fontSize: '18px', color: '#ffe2a1', backgroundColor: '#46351fcc', padding: { x: 5, y: 2 } }).setOrigin(0.5).setDepth(-0.5);
+      this.drawShopStall(x + (team === 1 ? 125 : -125), y + 62, team);
     }
     this.add.text(1570, 190, 'COMMON JUNGLE', { fontSize: '27px', color: '#e4d8ae' }).setOrigin(0.5).setDepth(-0.5);
     this.add.text(1600, 960, 'MID', { fontSize: '24px', color: '#4d514c' }).setOrigin(0.5).setDepth(-0.5);
@@ -406,6 +423,72 @@ export class NetworkGameScene extends Phaser.Scene {
     ground.strokePath();
     ground.fillStyle(color).fillCircle(points[0].x, points[0].y, width / 2);
     ground.fillCircle(points.at(-1)!.x, points.at(-1)!.y, width / 2);
+  }
+
+  private drawBamboo(x: number, y: number, radius: number): void {
+    const ground = this.mapGraphics;
+    ground.fillStyle(0x172b29, 0.55).fillEllipse(x + 7, y + 17, radius * 2.5, radius);
+    for (const offset of [-11, 1, 12]) {
+      ground.lineStyle(5, 0x6e8658).lineBetween(x + offset, y + 15, x + offset + 2, y - radius);
+      ground.lineStyle(2, 0xb1bd81).lineBetween(x + offset + 2, y + 12, x + offset + 3, y - radius);
+      for (const shift of [-14, 0, 13]) {
+        ground.fillStyle(shift === 0 ? 0x3c6c55 : 0x4d8061, 0.95);
+        ground.fillTriangle(x + offset + 1, y + shift, x + offset - 17, y + shift - 12, x + offset - 5, y + shift - 1);
+        ground.fillTriangle(x + offset + 1, y + shift, x + offset + 20, y + shift - 14, x + offset + 7, y + shift - 1);
+      }
+    }
+  }
+
+  private drawSakura(x: number, y: number, radius: number): void {
+    const ground = this.mapGraphics;
+    ground.fillStyle(0x172b29, 0.5).fillEllipse(x + 8, y + 19, radius * 2.4, radius * 0.8);
+    ground.lineStyle(8, 0x6d554c).lineBetween(x, y + 20, x - 2, y - radius);
+    ground.lineStyle(4, 0x8b6d5a).lineBetween(x - 2, y - 5, x - radius * 0.75, y - radius * 0.7);
+    ground.lineBetween(x - 2, y - 8, x + radius * 0.8, y - radius * 0.9);
+    for (let petal = 0; petal < 7; petal++) {
+      const angle = petal * Math.PI * 2 / 7;
+      const px = x + Math.cos(angle) * radius * 0.65;
+      const py = y - radius + Math.sin(angle) * radius * 0.5;
+      ground.fillStyle(petal % 2 ? 0xb77f91 : 0xd3a9ad, 0.9).fillCircle(px, py, radius * 0.37);
+    }
+    ground.fillStyle(0xf1d9c8, 0.75).fillCircle(x, y - radius, radius * 0.28);
+  }
+
+  private drawLantern(x: number, y: number): void {
+    const ground = this.mapGraphics;
+    ground.fillStyle(0x192c2b, 0.55).fillEllipse(x + 5, y + 12, 32, 12);
+    ground.fillStyle(0x777269).fillRect(x - 4, y - 24, 8, 32);
+    ground.fillStyle(0xb5ab8b).fillRect(x - 9, y - 32, 18, 14);
+    ground.fillStyle(0xffdc86, 0.9).fillRect(x - 5, y - 29, 10, 8);
+    ground.fillStyle(0x5f5e57).fillTriangle(x - 14, y - 33, x + 14, y - 33, x, y - 43);
+    ground.fillStyle(0x858077).fillRect(x - 15, y + 6, 30, 6);
+  }
+
+  private drawBridge(x: number, y: number): void {
+    const ground = this.mapGraphics;
+    ground.fillStyle(0x423c35).fillRoundedRect(x - 86, y - 42, 172, 84, 12);
+    ground.fillStyle(0x896b4e).fillRoundedRect(x - 80, y - 38, 160, 76, 10);
+    for (let plank = -70; plank <= 70; plank += 16) {
+      ground.lineStyle(3, 0x493d32, 0.8).lineBetween(x + plank, y - 37, x + plank, y + 37);
+    }
+    ground.lineStyle(8, 0x5a3931).lineBetween(x - 88, y - 46, x + 88, y - 46);
+    ground.lineBetween(x - 88, y + 46, x + 88, y + 46);
+    for (const offset of [-76, -30, 30, 76]) {
+      ground.fillStyle(0x4b312d).fillCircle(x + offset, y - 46, 7);
+      ground.fillCircle(x + offset, y + 46, 7);
+    }
+  }
+
+  private drawShopStall(x: number, y: number, team: 1 | 2): void {
+    const ground = this.mapGraphics;
+    ground.fillStyle(0x2a2927, 0.6).fillEllipse(x, y + 28, 94, 34);
+    ground.fillStyle(0x6d503e).fillRoundedRect(x - 37, y - 14, 74, 43, 5);
+    ground.fillStyle(0xb99b6e).fillRect(x - 29, y - 6, 58, 16);
+    ground.fillStyle(team === 1 ? 0x3c6981 : 0x9b504c).fillTriangle(x - 48, y - 13, x + 48, y - 13, x, y - 63);
+    ground.lineStyle(5, 0xd0b77d).lineBetween(x - 48, y - 13, x + 48, y - 13);
+    for (const offset of [-19, 0, 19]) {
+      ground.fillStyle(0xe5bd78).fillCircle(x + offset, y + 2, 6);
+    }
   }
 
   private drawTorii(x: number, y: number, scale: number): void {
@@ -427,30 +510,48 @@ export class NetworkGameScene extends Phaser.Scene {
       this.graphics.lineStyle(2, 0xffffff, 0.75).strokeCircle(x, y, radius + 12);
     }
     if (unit.kind === 'tower') {
-      this.graphics.fillStyle(0x211e26).fillRect(x - 18, y - 35, 36, 62);
-      this.graphics.fillStyle(teamColor).fillTriangle(x - 28, y - 32, x + 28, y - 32, x, y - 66);
+      this.graphics.fillStyle(0x262d2b).fillEllipse(x, y + 20, 70, 23);
+      this.graphics.fillStyle(0xbcb39a).fillRoundedRect(x - 20, y - 35, 40, 55, 5);
+      this.graphics.fillStyle(0x4f4a43).fillRect(x - 13, y - 18, 26, 23);
+      this.graphics.fillStyle(teamColor).fillTriangle(x - 35, y - 34, x + 35, y - 34, x, y - 57);
+      this.graphics.fillStyle(0xd9cda8).fillRect(x - 25, y - 35, 50, 6);
+      this.graphics.fillStyle(teamColor).fillTriangle(x - 26, y - 57, x + 26, y - 57, x, y - 77);
+      this.graphics.fillStyle(0xd9cda8).fillRect(x - 19, y - 58, 38, 5);
+      this.graphics.fillStyle(0xffd685).fillCircle(x, y - 15, 5);
     } else if (unit.kind === 'barracks') {
-      this.graphics.fillStyle(teamColor).fillRect(x - 28, y - 18, 56, 40);
-      this.graphics.fillStyle(0x26222a).fillTriangle(x - 36, y - 18, x + 36, y - 18, x, y - 48);
+      this.graphics.fillStyle(0x292d2d).fillEllipse(x, y + 20, 91, 31);
+      this.graphics.fillStyle(0xd6c39b).fillRoundedRect(x - 31, y - 18, 62, 44, 4);
+      this.graphics.fillStyle(teamColor).fillTriangle(x - 46, y - 20, x + 46, y - 20, x, y - 60);
+      this.graphics.fillStyle(0x3b342e).fillRect(x - 9, y - 8, 18, 34);
+      for (const offset of [-22, 22]) this.graphics.fillStyle(0x5c5240).fillRect(x + offset - 4, y - 9, 8, 17);
     } else if (unit.kind === 'throne') {
-      this.graphics.fillStyle(teamColor).fillCircle(x, y, radius + 14);
-      this.graphics.fillStyle(0xf8e2a0).fillTriangle(x - 20, y - 22, x + 20, y - 22, x, y - 58);
+      this.graphics.fillStyle(0x272a2a).fillEllipse(x, y + 29, 124, 46);
+      this.graphics.fillStyle(0xc9bb9d).fillRoundedRect(x - 41, y - 28, 82, 60, 6);
+      for (const offset of [-26, 26]) {
+        this.graphics.fillStyle(0xb5ae99).fillRect(x + offset - 8, y - 67, 16, 48);
+        this.graphics.fillStyle(teamColor).fillTriangle(x + offset - 18, y - 66, x + offset + 18, y - 66, x + offset, y - 84);
+      }
+      this.graphics.fillStyle(teamColor).fillTriangle(x - 51, y - 28, x + 51, y - 28, x, y - 71);
+      this.graphics.fillStyle(0xffe1a2).fillCircle(x, y - 11, 12);
+      this.graphics.lineStyle(3, 0x654a37).strokeCircle(x, y - 11, 12);
     } else if (unit.kind === 'fountain') {
-      this.graphics.fillStyle(0x293e42).fillCircle(x, y + 6, 43);
-      this.graphics.lineStyle(6, 0xe6c989).strokeCircle(x, y + 5, 40);
-      this.graphics.fillStyle(teamColor, 0.85).fillCircle(x, y + 5, 32);
-      this.graphics.fillStyle(0xd5fff6, 0.85).fillTriangle(x, y - 42, x - 11, y + 5, x + 11, y + 5);
-      this.graphics.lineStyle(4, 0xffce73).lineBetween(x - 48, y - 35, x - 48, y + 2);
-      this.graphics.fillStyle(0xffd473).fillCircle(x - 48, y - 32, 7);
+      this.graphics.fillStyle(0x293e42).fillCircle(x, y + 6, 47);
+      this.graphics.lineStyle(8, 0xe6c989).strokeCircle(x, y + 5, 43);
+      this.graphics.fillStyle(teamColor, 0.85).fillCircle(x, y + 5, 35);
+      this.graphics.fillStyle(0xd5fff6, 0.75).fillTriangle(x, y - 52, x - 10, y + 5, x + 10, y + 5);
+      this.graphics.lineStyle(3, 0xcff6ec, 0.7).strokeCircle(x, y + 7, 24 + Math.sin(this.time.now / 600) * 2);
+      this.graphics.lineStyle(4, 0xffce73).lineBetween(x - 50, y - 35, x - 50, y + 2);
+      this.graphics.fillStyle(0xffd473).fillCircle(x - 50, y - 32, 7);
     } else if (unit.kind === 'shrine') {
-      this.graphics.lineStyle(6, teamColor).strokeCircle(x, y, radius + 10);
-      this.graphics.fillStyle(teamColor, 0.6).fillCircle(x, y, radius);
+      this.graphics.fillStyle(0x4c4c44).fillRoundedRect(x - 25, y - 8, 50, 35, 4);
+      this.graphics.fillStyle(teamColor).fillTriangle(x - 36, y - 10, x + 36, y - 10, x, y - 41);
+      this.graphics.lineStyle(5, teamColor).strokeCircle(x, y + 12, radius + 10);
+      this.graphics.fillStyle(0xf8e3ad).fillCircle(x, y + 5, 7);
     } else {
-      this.graphics.fillStyle(0x141b22).fillCircle(x, y + 6, radius + 3);
-      this.graphics.fillStyle(teamColor).fillCircle(x, y, radius);
-      this.graphics.fillStyle(0xffffff, 0.8).fillCircle(x - radius / 3, y - radius / 3, radius / 4);
+      this.graphics.fillStyle(0x141b22, 0.5).fillEllipse(x, y + radius * 0.75, radius * 2.4, radius * 0.8);
+      this.graphics.lineStyle(3, teamColor, 0.9).strokeCircle(x, y, radius + 5);
       const asset = unit.kind === 'creep' ? `creep-${unit.team === 1 ? 'blue' : 'red'}`
-        : unit.kind === 'neutral' || unit.kind === 'boss' ? 'neutral-ghost' : undefined;
+        : unit.kind === 'neutral' ? 'neutral-ghost' : unit.kind === 'boss' ? 'oni' : undefined;
       if (asset && this.textures.exists(`arena-${asset}`)) {
         let sprite = this.unitSprites.get(unit.id);
         if (!sprite) {
@@ -458,8 +559,7 @@ export class NetworkGameScene extends Phaser.Scene {
           this.unitSprites.set(unit.id, sprite);
         }
         sprite.setPosition(x, y + Math.sin(this.time.now / 240 + unit.id) * 1.5);
-        sprite.setScale(unit.kind === 'boss' ? 4.5 : unit.kind === 'neutral' ? 2.6 : 2.3);
-        if (unit.kind === 'boss') sprite.setTint(0xff5555);
+        sprite.setScale(unit.kind === 'boss' ? 1.8 : unit.kind === 'neutral' ? 0.95 : 0.78);
       }
     }
     if (unit.kind !== 'fountain' && unit.kind !== 'shrine') {
@@ -479,19 +579,32 @@ export class NetworkGameScene extends Phaser.Scene {
     if (HERO_SPRITES[player.heroId] && this.textures.exists(texture)) {
       let sprite = this.playerSprites.get(player.id);
       if (!sprite) {
-        sprite = this.add.image(x, y, texture).setDepth(2);
+        sprite = this.add.sprite(x, y, texture).setDepth(2);
         this.playerSprites.set(player.id, sprite);
       }
       if (sprite.texture.key !== texture) sprite.setTexture(texture);
       const previous = this.lastRenderPositions.get(player.id);
       const moving = previous && Math.hypot(x - previous.x, y - previous.y) > 0.35;
-      const bob = moving ? Math.sin(this.time.now / 85) * 2 : Math.sin(this.time.now / 350) * 0.5;
-      const attacking = this.snapshots.at(-1)?.effects.some(effect => effect.casterId === player.id && effect.kind === 'attack' && this.snapshots.at(-1)!.tick - effect.tick < 4);
-      sprite.setPosition(x, y + bob);
-      sprite.setScale(attacking ? 3.4 : 3);
+      let direction = this.playerDirections.get(player.id) ?? (player.team === 1 ? 'right' : 'left');
+      if (moving && previous) {
+        const dx = x - previous.x;
+        const dy = y - previous.y;
+        direction = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : (dy < 0 ? 'back' : 'front');
+        this.playerDirections.set(player.id, direction);
+      }
+      const latest = this.snapshots.at(-1);
+      const recent = latest?.effects.filter(item => item.casterId === player.id && latest.tick - item.tick < 5) ?? [];
+      const attacking = recent.some(item => item.kind === 'attack');
+      const casting = recent.some(item => !['attack', 'gold', 'lifesteal'].includes(item.kind));
+      const motion: HeroMotion = player.hp <= 0 ? 'death' : attacking ? 'attack'
+        : casting ? 'cast' : (this.playerHitUntil.get(player.id) ?? 0) > this.time.now ? 'hit'
+          : moving ? 'run' : 'idle';
+      const animation = `${texture}:${direction}:${motion}`;
+      if (sprite.anims.currentAnim?.key !== animation) sprite.play(animation);
+      sprite.setPosition(x, y);
+      sprite.setScale(0.82);
       sprite.setAlpha(player.hp > 0 ? 1 : 0.45);
       sprite.setTint(player.hp > 0 ? 0xffffff : 0x777777);
-      if (previous && Math.abs(x - previous.x) > 0.3) sprite.setFlipX(x < previous.x);
       this.lastRenderPositions.set(player.id, { x, y });
     } else {
       this.graphics.fillStyle(color);
@@ -532,8 +645,8 @@ export class NetworkGameScene extends Phaser.Scene {
         continue;
       }
       active.add(effect.id);
-      this.drawEffectShape(effect, progress);
       const caster = this.snapshots.at(-1)?.players.find(player => player.id === effect.casterId);
+      this.drawEffectShape(effect, progress, caster?.heroId);
       const sourceUnit = this.snapshots.at(-1)?.units.find(unit => unit.id === effect.sourceUnitId);
       const rangedAttack = effect.kind === 'attack' && ['mage', 'support', 'marksman'].includes(caster?.heroId || '');
       const unitProjectile = effect.kind === 'attack' && (sourceUnit?.kind === 'tower' || sourceUnit?.kind === 'creep');
@@ -550,7 +663,9 @@ export class NetworkGameScene extends Phaser.Scene {
         image = this.add.image(effect.x, effect.y, key).setDepth(3);
         this.effectImages.set(effect.id, image);
       }
-      const origin = caster && rangedAttack ? caster : unitProjectile ? sourceUnit : undefined;
+      const eventOrigin = effect.originX !== undefined && effect.originY !== undefined
+        ? { x: effect.originX, y: effect.originY } : undefined;
+      const origin = rangedAttack || unitProjectile ? eventOrigin ?? (rangedAttack ? caster : sourceUnit) : undefined;
       const travel = origin ? Math.min(1, progress / 0.35) : 1;
       image.setPosition(origin ? Phaser.Math.Linear(origin.x, effect.x, travel) : effect.x,
         origin ? Phaser.Math.Linear(origin.y, effect.y, travel) : effect.y);
@@ -572,7 +687,7 @@ export class NetworkGameScene extends Phaser.Scene {
     }
   }
 
-  private drawEffectShape(effect: WorldEffect, progress: number): void {
+  private drawEffectShape(effect: WorldEffect, progress: number, heroId?: string): void {
     const g = this.graphics;
     const { x, y } = effect;
     const fade = 1 - progress;
@@ -623,5 +738,24 @@ export class NetworkGameScene extends Phaser.Scene {
       default:
         g.lineStyle(4 * fade + 1, 0xffe8a2, fade).strokeCircle(x, y, 10 + progress * 38);
     }
+    if (effect.abilityKey && heroId) this.drawAbilitySignature(x, y, effect.abilityKey, heroId, progress);
+  }
+
+  private drawAbilitySignature(x: number, y: number, key: NonNullable<WorldEffect['abilityKey']>, heroId: string, progress: number): void {
+    const heroes = ['warrior', 'assassin', 'mage', 'support', 'marksman', 'fighter'];
+    const heroIndex = Math.max(0, heroes.indexOf(heroId));
+    const abilityIndex = (['Q', '1', '2', '3'] as const).indexOf(key);
+    const signature = heroIndex * 4 + abilityIndex;
+    const color = [0x77bbef, 0xc49add, 0x8ad9f4, 0xa9e4b3, 0xe7c778, 0xee9d81][heroIndex];
+    const radius = 24 + progress * (44 + signature % 4 * 8);
+    const rays = 3 + signature % 5;
+    const alpha = Math.max(0, 0.8 - progress);
+    for (let ray = 0; ray < rays; ray++) {
+      const angle = ray * Math.PI * 2 / rays + signature * 0.22 + progress * (signature % 2 ? 0.5 : -0.5);
+      this.graphics.lineStyle(2 + signature % 3, color, alpha).lineBetween(
+        x + Math.cos(angle) * radius, y + Math.sin(angle) * radius,
+        x + Math.cos(angle) * (radius + 10), y + Math.sin(angle) * (radius + 10));
+    }
+    this.graphics.lineStyle(2, color, alpha * 0.8).strokeCircle(x, y, radius * 0.72);
   }
 }

@@ -64,7 +64,10 @@ test('registration launches a playable client scene', async ({ page }) => {
   await expect(startGame).toBeVisible();
   await startGame.click();
 
-  await expect(page.getByRole('heading', { name: 'Hero Select' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Choose your champion' })).toBeVisible();
+  for (const heroId of ['warrior', 'assassin', 'mage', 'support', 'marksman', 'fighter']) {
+    await expect(page.locator(`img[src*="sengoku/portraits/${heroId}.webp"]`).first()).toHaveJSProperty('naturalWidth', 256);
+  }
   await page.getByRole('button', { name: /Warrior/ }).first().click();
   await page.getByRole('button', { name: /LOCK HERO/ }).click();
   const canvas = page.locator('canvas[data-game-ready="true"]');
@@ -136,7 +139,7 @@ test('two players receive the same server match', async ({ browser }) => {
     await host.getByRole('button', { name: /START GAME/ }).click();
 
     for (const [page, hero] of [[host, 'Warrior'], [guest, 'Arcane Mage']] as const) {
-      await expect(page.getByRole('heading', { name: 'Hero Select' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Choose your champion' })).toBeVisible();
       await page.getByRole('button', { name: new RegExp(hero) }).first().click();
       await page.getByRole('button', { name: /LOCK HERO/ }).click();
     }
@@ -183,9 +186,9 @@ test('mobile player can scroll through setup and move with touch controls', asyn
     await page.getByPlaceholder('Enter lobby name...').fill(`Mobile ${Date.now()}`);
     await page.getByRole('button', { name: 'Create Lobby' }).click();
     await page.getByRole('button', { name: /START GAME/ }).click();
-    await expect(page.getByRole('heading', { name: 'Hero Select' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Choose your champion' })).toBeVisible();
     await page.getByRole('button', { name: /Warrior/ }).first().click();
-    await expect(page.locator('img[src*="kenney/tiny-dungeon/warrior.png"]').first()).toHaveJSProperty('naturalWidth', 16);
+    await expect(page.locator('img[src*="sengoku/portraits/warrior.webp"]').first()).toHaveJSProperty('naturalWidth', 256);
     const lock = page.getByRole('button', { name: /LOCK HERO/ });
     await lock.scrollIntoViewIfNeeded();
     await expect(lock).toBeInViewport();

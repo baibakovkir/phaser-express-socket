@@ -358,6 +358,7 @@ test('database ability costs mana and obeys cooldown and range', () => {
   assert.equal(red.hp, 100);
   assert.equal(blue.mana, 75);
   assert.equal(world.snapshot().effects.at(-1).kind, 'nova');
+  assert.equal(world.snapshot().effects.at(-1).abilityKey, '1');
   for (let i = 0; i < 30; i++) world.step();
   red.x = blue.x + 180;
   red.y = blue.y;

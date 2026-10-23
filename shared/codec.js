@@ -68,6 +68,10 @@ export function encodeSnapshot(snapshot, playerIds) {
       tick: effect.tick,
       sourceUnit: effect.sourceUnitId || 0,
       amount: effect.amount || 0,
+      abilityKey: effect.abilityKey || '',
+      originX: Math.round(effect.originX ?? 0),
+      originY: Math.round(effect.originY ?? 0),
+      hasOrigin: effect.originX !== undefined && effect.originY !== undefined,
     })),
     units: snapshot.units.map(unit => ({
       id: unit.id,
@@ -129,6 +133,8 @@ export function decodeSnapshot(data, matchId, participants) {
         ...(effect.target ? { targetId: participants[effect.target - 1]?.playerId } : {}),
         tick: effect.tick,
         ...(effect.amount ? { amount: effect.amount } : {}),
+        ...(effect.abilityKey ? { abilityKey: effect.abilityKey } : {}),
+        ...(effect.hasOrigin ? { originX: effect.originX, originY: effect.originY } : {}),
       };
     }),
     units: message.units.map(unit => {

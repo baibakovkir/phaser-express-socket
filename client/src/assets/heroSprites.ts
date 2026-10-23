@@ -7,8 +7,6 @@ export const HERO_SPRITES: Record<string, string> = {
   fighter: 'fighter',
 };
 
-export const EFFECT_SPRITES = ['arrow', 'slash', 'spark', 'flame', 'heal'] as const;
-
-export function spriteUrl(name: string): string {
-  return `${import.meta.env.BASE_URL}assets/kenney/tiny-dungeon/${name}.png`;
+export function portraitUrl(heroId: string): string {
+  return `${import.meta.env.BASE_URL}assets/sengoku/portraits/${heroId}.webp`;
 }

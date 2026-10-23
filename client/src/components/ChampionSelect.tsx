@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { network } from '../network/socket';
 import { EventBus } from '../events/EventBus';
-import { HERO_SPRITES, spriteUrl } from '../assets/heroSprites';
+import { HERO_SPRITES, portraitUrl } from '../assets/heroSprites';
 
 export interface Hero {
   id: string;
@@ -40,12 +40,8 @@ interface HeroSelectProps {
 
 const ROLES = ['tank', 'assassin', 'mage', 'support', 'marksman', 'fighter'] as const;
 const ROLE_COLORS: Record<string, string> = {
-  tank: 'border-blue-500 bg-blue-900/30',
-  assassin: 'border-red-500 bg-red-900/30',
-  mage: 'border-purple-500 bg-purple-900/30',
-  support: 'border-green-500 bg-green-900/30',
-  marksman: 'border-yellow-500 bg-yellow-900/30',
-  fighter: 'border-orange-500 bg-orange-900/30',
+  tank: 'text-sky-200', assassin: 'text-violet-200', mage: 'text-blue-200',
+  support: 'text-emerald-200', marksman: 'text-amber-200', fighter: 'text-red-200',
 };
 
 export const HeroSelect: React.FC<HeroSelectProps> = ({ matchId, team, onComplete }) => {
@@ -139,13 +135,13 @@ export const HeroSelect: React.FC<HeroSelectProps> = ({ matchId, team, onComplet
   }
 
   return (
-    <div className="min-h-full bg-gray-900 flex flex-col md:h-full md:overflow-hidden">
+    <div className="sengoku-select min-h-full flex flex-col md:h-full md:overflow-hidden">
       {/* Header - Fixed */}
-      <div className="bg-gray-800 border-b border-gray-700 px-4 sm:px-8 py-4 flex-shrink-0">
+      <div className="sengoku-panel border-b border-amber-800 px-4 sm:px-8 py-4 flex-shrink-0">
         <div className="max-w-[1600px] mx-auto flex flex-wrap gap-3 justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold text-cyan-400">Hero Select</h1>
-            <p className="text-gray-400 text-sm mt-1">{status}</p>
+            <h1 className="text-3xl font-bold tracking-wide text-amber-100">Choose your champion</h1>
+            <p className="text-amber-200/70 text-sm mt-1">{status}</p>
           </div>
           <div className={`px-6 py-2 rounded-lg font-bold ${team === 'blue' ? 'bg-blue-600' : 'bg-red-600'} text-white`}>
             {team === 'blue' ? '🔵 Blue Team' : '🔴 Red Team'}
@@ -154,19 +150,19 @@ export const HeroSelect: React.FC<HeroSelectProps> = ({ matchId, team, onComplet
       </div>
 
       {/* Filters - Fixed */}
-      <div className="bg-gray-900 px-4 sm:px-8 py-4 border-b border-gray-700 flex-shrink-0">
+      <div className="bg-[#17252a]/90 px-4 sm:px-8 py-4 border-b border-amber-900 flex-shrink-0">
         <div className="max-w-[1600px] mx-auto flex flex-col sm:flex-row gap-3 sm:gap-4">
           <input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Search heroes..."
-            className="min-w-0 flex-1 px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-cyan-400"
+            className="min-w-0 flex-1 px-4 py-2 bg-[#24333a] border border-amber-900 rounded-lg text-white focus:outline-none focus:border-amber-400"
           />
           <select
             value={filterRole}
             onChange={(e) => setFilterRole(e.target.value)}
-            className="px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-cyan-400"
+            className="px-4 py-2 bg-[#24333a] border border-amber-900 rounded-lg text-white focus:outline-none focus:border-amber-400"
           >
             <option value="all">All Roles</option>
             {ROLES.map((role) => (
@@ -186,23 +182,21 @@ export const HeroSelect: React.FC<HeroSelectProps> = ({ matchId, team, onComplet
                 key={hero.id}
                 onClick={() => setSelectedHero(hero)}
                 className={`
-                  p-2 sm:p-4 rounded-xl border-2 transition-all text-left
+                  sengoku-card p-2 sm:p-4 rounded-xl border-2 transition-all text-left
                   ${selectedHero?.id === hero.id 
-                    ? 'border-cyan-400 bg-cyan-900/30 scale-105 shadow-lg shadow-cyan-500/20' 
-                    : `border-gray-700 bg-gray-800 hover:border-gray-500`}
-                  ${ROLE_COLORS[hero.role]}
+                    ? 'border-amber-300 bg-amber-900/30 scale-[1.02] shadow-lg shadow-amber-500/20'
+                    : 'border-amber-900 bg-[#1b2d31]/95 hover:border-amber-600'}
                 `}
               >
                 <div 
-                  className="w-full aspect-square rounded-lg mb-3 flex items-center justify-center"
-                  style={{ backgroundColor: `#${hero.color.toString(16).padStart(6, '0')}` }}
+                  className="w-full aspect-square rounded-lg mb-3 flex items-center justify-center overflow-hidden border border-amber-200/25 bg-[#15242a]"
                 >
                   {HERO_SPRITES[hero.id]
-                    ? <img src={spriteUrl(HERO_SPRITES[hero.id])} alt="" className="h-16 w-16 max-w-full object-contain [image-rendering:pixelated]" />
+                    ? <img src={portraitUrl(hero.id)} alt="" loading="lazy" className="h-full w-full rounded-lg object-cover" />
                     : <span className="text-white text-4xl font-bold">{hero.name[0]}</span>}
                 </div>
                 <h3 className="text-white font-bold mb-1">{hero.name}</h3>
-                <p className="text-gray-400 text-sm capitalize">{hero.role}</p>
+                <p className={`text-sm capitalize ${ROLE_COLORS[hero.role]}`}>{hero.role}</p>
               </button>
             ))}
           </div>
@@ -217,15 +211,14 @@ export const HeroSelect: React.FC<HeroSelectProps> = ({ matchId, team, onComplet
 
       {/* Hero Details Panel - Fixed at bottom */}
       {selectedHero && (
-        <div className="bg-gray-800 border-t border-gray-700 p-4 sm:p-6 flex-shrink-0">
+        <div className="sengoku-panel border-t border-amber-700 p-4 sm:p-6 flex-shrink-0">
           <div className="max-w-[1600px] mx-auto flex flex-wrap gap-4 sm:gap-6 items-center">
             {/* Hero Portrait */}
             <div 
-              className="hidden sm:flex w-24 h-24 rounded-xl items-center justify-center text-white text-5xl font-bold flex-shrink-0"
-              style={{ backgroundColor: `#${selectedHero.color.toString(16).padStart(6, '0')}` }}
+              className="hidden sm:flex w-24 h-24 rounded-xl items-center justify-center border border-amber-400 bg-[#15242a] text-white text-5xl font-bold flex-shrink-0"
             >
               {HERO_SPRITES[selectedHero.id]
-                ? <img src={spriteUrl(HERO_SPRITES[selectedHero.id])} alt="" className="h-20 w-20 object-contain [image-rendering:pixelated]" />
+                ? <img src={portraitUrl(selectedHero.id)} alt="" className="h-20 w-20 rounded-lg object-cover" />
                 : selectedHero.name[0]}
             </div>
 
@@ -257,9 +250,9 @@ export const HeroSelect: React.FC<HeroSelectProps> = ({ matchId, team, onComplet
               className={`
                 w-full sm:w-auto px-8 py-3 sm:py-4 rounded-xl font-bold text-lg sm:text-xl transition-all flex-shrink-0
                 ${isLocked 
-                  ? 'bg-green-700 cursor-default' 
-                  : 'bg-green-600 hover:bg-green-500 hover:scale-105'}
-                text-white shadow-lg
+                  ? 'bg-emerald-700 cursor-default'
+                  : 'bg-amber-600 hover:bg-amber-500 hover:scale-105'}
+                text-slate-950 shadow-lg
               `}
             >
               {isLocked ? '✓ Locked In!' : '🔒 LOCK HERO'}

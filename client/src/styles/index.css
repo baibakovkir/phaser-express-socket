@@ -2,6 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
+.sengoku-select {
+  background:
+    radial-gradient(circle at 50% 0%, #694a3c55 0, transparent 48%),
+    repeating-linear-gradient(135deg, #d3be8a08 0 2px, transparent 2px 18px),
+    #142228;
+}
+
+.sengoku-panel {
+  background:
+    linear-gradient(105deg, #172931 0%, #28332f 50%, #17252c 100%);
+  box-shadow: inset 0 1px #dfc58a28, 0 8px 24px #08191b66;
+}
+
+.sengoku-card {
+  box-shadow: inset 0 1px #e0c98b19, 0 8px 20px #07181c80;
+}
+
 .touch-match-shell {
   position: fixed;
   inset: 0;
