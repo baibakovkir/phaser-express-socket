@@ -6,6 +6,7 @@ import { network } from '../network/socket';
 import { mobileInput, queueMobileCast, resetMobileInput, takeMobileCast } from '../input/mobileInput';
 import { HERO_SPRITES } from '../assets/heroSprites';
 import { registerArenaSprites } from '../assets/arenaSprites';
+import { abilityEffectKey, registerAbilityEffects } from '../assets/abilityEffects';
 import { registerArenaTerrain, TERRAIN_NAMES, terrainUrl } from '../assets/arenaTerrain';
 import { registerSengokuHeroes, type HeroDirection, type HeroMotion } from '../assets/sengokuSprites';
 import { EventBus } from '../events/EventBus';
@@ -82,6 +83,7 @@ export class NetworkGameScene extends Phaser.Scene {
   create(): void {
     registerSengokuHeroes(this);
     registerArenaSprites(this);
+    registerAbilityEffects(this);
     registerArenaTerrain(this);
     this.add.image(0, 0, 'arena-map').setOrigin(0).setDisplaySize(MAP_WIDTH, MAP_HEIGHT).setDepth(-2);
     this.mapGraphics = this.add.graphics().setDepth(-1);
@@ -649,7 +651,9 @@ export class NetworkGameScene extends Phaser.Scene {
         : effect.kind === 'meteor' || effect.kind === 'execute' ? 'flame'
           : effect.kind === 'heal' || effect.kind === 'revive' || effect.kind === 'lifesteal' || effect.kind === 'item-heal' ? 'heal'
             : effect.kind === 'strike' ? 'slash' : 'spark';
-      const key = `arena-${asset}`;
+      const abilityTexture = effect.abilityKey && caster?.heroId
+        ? abilityEffectKey(caster.heroId, effect.abilityKey) : undefined;
+      const key = abilityTexture && this.textures.exists(abilityTexture) ? abilityTexture : `arena-${asset}`;
       if (!this.textures.exists(key)) continue;
       let image = this.effectImages.get(effect.id);
       if (!image) {
@@ -663,9 +667,9 @@ export class NetworkGameScene extends Phaser.Scene {
       image.setPosition(origin ? Phaser.Math.Linear(origin.x, effect.x, travel) : effect.x,
         origin ? Phaser.Math.Linear(origin.y, effect.y, travel) : effect.y);
       image.setVisible(!origin || progress < 0.35);
-      image.setScale((effect.kind === 'meteor' ? 3.2 : 2.3) * (1 + progress * 0.5));
+      image.setScale((abilityTexture ? 1.3 : effect.kind === 'meteor' ? 3.2 : 2.3) * (1 + progress * 0.5));
       image.setAlpha(1 - progress);
-      image.setTint(effect.kind === 'nova' ? 0x8dcfff : effect.kind === 'shield' ? 0x86eaff
+      image.setTint(abilityTexture ? 0xffffff : effect.kind === 'nova' ? 0x8dcfff : effect.kind === 'shield' ? 0x86eaff
         : effect.kind === 'heal' || effect.kind === 'revive' || effect.kind === 'lifesteal' || effect.kind === 'item-heal' ? 0x8cff9c : 0xffffff);
       image.setRotation(origin ? Math.atan2(effect.y - origin.y, effect.x - origin.x) + Math.PI / 2 : progress * 2);
     }
