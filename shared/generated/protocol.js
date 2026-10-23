@@ -28,6 +28,9 @@ export const moba = $root.moba = (() => {
          * @property {boolean|null} [attack] Input attack
          * @property {string|null} [cast] Input cast
          * @property {number|null} [targetUnit] Input targetUnit
+         * @property {number|null} [aimX] Input aimX
+         * @property {number|null} [aimY] Input aimY
+         * @property {boolean|null} [aimed] Input aimed
          */
 
         /**
@@ -94,6 +97,30 @@ export const moba = $root.moba = (() => {
         Input.prototype.targetUnit = 0;
 
         /**
+         * Input aimX.
+         * @member {number} aimX
+         * @memberof moba.Input
+         * @instance
+         */
+        Input.prototype.aimX = 0;
+
+        /**
+         * Input aimY.
+         * @member {number} aimY
+         * @memberof moba.Input
+         * @instance
+         */
+        Input.prototype.aimY = 0;
+
+        /**
+         * Input aimed.
+         * @member {boolean} aimed
+         * @memberof moba.Input
+         * @instance
+         */
+        Input.prototype.aimed = false;
+
+        /**
          * Creates a new Input instance using the specified properties.
          * @function create
          * @memberof moba.Input
@@ -133,6 +160,12 @@ export const moba = $root.moba = (() => {
                 writer.uint32(/* id 5, wireType 2 =*/42).string(message.cast);
             if (message.targetUnit != null && Object.hasOwnProperty.call(message, "targetUnit"))
                 writer.uint32(/* id 6, wireType 0 =*/48).uint32(message.targetUnit);
+            if (message.aimX != null && Object.hasOwnProperty.call(message, "aimX"))
+                writer.uint32(/* id 7, wireType 0 =*/56).sint32(message.aimX);
+            if (message.aimY != null && Object.hasOwnProperty.call(message, "aimY"))
+                writer.uint32(/* id 8, wireType 0 =*/64).sint32(message.aimY);
+            if (message.aimed != null && Object.hasOwnProperty.call(message, "aimed"))
+                writer.uint32(/* id 9, wireType 0 =*/72).bool(message.aimed);
             return writer;
         };
 
@@ -207,6 +240,18 @@ export const moba = $root.moba = (() => {
                         message.targetUnit = reader.uint32();
                         break;
                     }
+                case 7: {
+                        message.aimX = reader.sint32();
+                        break;
+                    }
+                case 8: {
+                        message.aimY = reader.sint32();
+                        break;
+                    }
+                case 9: {
+                        message.aimed = reader.bool();
+                        break;
+                    }
                 default:
                     reader.skipType(tag & 7, long);
                     break;
@@ -269,6 +314,15 @@ export const moba = $root.moba = (() => {
             if (message.targetUnit != null && Object.hasOwnProperty.call(message, "targetUnit"))
                 if (!$util.isInteger(message.targetUnit))
                     return "targetUnit: integer expected";
+            if (message.aimX != null && Object.hasOwnProperty.call(message, "aimX"))
+                if (!$util.isInteger(message.aimX))
+                    return "aimX: integer expected";
+            if (message.aimY != null && Object.hasOwnProperty.call(message, "aimY"))
+                if (!$util.isInteger(message.aimY))
+                    return "aimY: integer expected";
+            if (message.aimed != null && Object.hasOwnProperty.call(message, "aimed"))
+                if (typeof message.aimed !== "boolean")
+                    return "aimed: boolean expected";
             return null;
         };
 
@@ -302,6 +356,12 @@ export const moba = $root.moba = (() => {
                 message.cast = String(object.cast);
             if (object.targetUnit != null)
                 message.targetUnit = object.targetUnit >>> 0;
+            if (object.aimX != null)
+                message.aimX = object.aimX | 0;
+            if (object.aimY != null)
+                message.aimY = object.aimY | 0;
+            if (object.aimed != null)
+                message.aimed = Boolean(object.aimed);
             return message;
         };
 
@@ -329,6 +389,9 @@ export const moba = $root.moba = (() => {
                 object.attack = false;
                 object.cast = "";
                 object.targetUnit = 0;
+                object.aimX = 0;
+                object.aimY = 0;
+                object.aimed = false;
             }
             if (message.seq != null && Object.hasOwnProperty.call(message, "seq"))
                 object.seq = message.seq;
@@ -342,6 +405,12 @@ export const moba = $root.moba = (() => {
                 object.cast = message.cast;
             if (message.targetUnit != null && Object.hasOwnProperty.call(message, "targetUnit"))
                 object.targetUnit = message.targetUnit;
+            if (message.aimX != null && Object.hasOwnProperty.call(message, "aimX"))
+                object.aimX = message.aimX;
+            if (message.aimY != null && Object.hasOwnProperty.call(message, "aimY"))
+                object.aimY = message.aimY;
+            if (message.aimed != null && Object.hasOwnProperty.call(message, "aimed"))
+                object.aimed = message.aimed;
             return object;
         };
 

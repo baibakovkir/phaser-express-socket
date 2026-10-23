@@ -9,6 +9,9 @@ message Input {
   bool attack = 4;
   string cast = 5;
   uint32 target_unit = 6;
+  sint32 aim_x = 7;
+  sint32 aim_y = 8;
+  bool aimed = 9;
 }
 
 message Effect {

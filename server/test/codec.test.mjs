@@ -27,6 +27,6 @@ test('protobuf round trip keeps authoritative fields in a smaller snapshot', () 
   const bytes = encodeSnapshot(snapshot, participants.map(item => item.playerId));
   assert.ok(bytes.byteLength < Buffer.byteLength(JSON.stringify(snapshot)) / 2);
   assert.deepEqual(decodeSnapshot(bytes, snapshot.matchId, participants), snapshot);
-  const input = { seq: 8, dx: -1, dy: 0, attack: true, cast: '1', targetUnitId: 42 };
+  const input = { seq: 8, dx: -1, dy: 0, attack: true, cast: '1', aimX: 130, aimY: 380, targetUnitId: 42 };
   assert.deepEqual(decodeInput(encodeInput(input)), input);
 });

@@ -160,14 +160,14 @@ test('only server-calculated range and cooldown can apply damage', () => {
   world.setInput('blue', { seq: 1, dx: 0, dy: 0, attack: true });
   world.step();
   assert.equal(red.hp, 100);
-  assert.ok(world.snapshot().effects.some(effect => effect.kind === 'attack' && effect.casterId === 'blue'));
+  assert.equal(world.snapshot().effects.some(effect => effect.kind === 'attack' && effect.casterId === 'blue'), false);
   red.x = blue.x + 100;
+  world.step();
+  assert.ok(world.snapshot().effects.some(effect => effect.kind === 'attack' && effect.casterId === 'blue'));
   red.y = blue.y;
-  for (let i = 0; i < 24; i++) world.step();
+  for (let i = 0; i < 23; i++) world.step();
   assert.equal(red.hp, 60);
   world.step();
-  assert.equal(red.hp, 60);
-  for (let i = 0; i < 23; i++) world.step();
   assert.equal(red.hp, 20);
 });
 
@@ -262,7 +262,7 @@ test('creeps keep a wide formation while moving along a lane', () => {
   assert.ok(Math.hypot(formation[1].x - formation[2].x, formation[1].y - formation[2].y) > 30);
 });
 
-test('a selected creep takes priority for an aimed spell', () => {
+test('a dragged spell hits its aim, not the selected autoattack target', () => {
   const hero = { ...heroes[0], maxMana: 100,
     abilities: [{ key: '1', cooldown: 1000, manaCost: 10, damage: 60, range: 120 }] };
   const world = new MatchWorld('aim-test', players, [hero]);
@@ -272,12 +272,13 @@ test('a selected creep takes priority for an aimed spell', () => {
   world.step();
   const blue = world.players.get('blue');
   const [near, selected] = [...world.units.units.values()].filter(unit => unit.kind === 'creep' && unit.team === 2);
-  near.x = blue.x + 65;
+  near.x = blue.x + 35;
   near.y = blue.y;
   selected.x = blue.x + 105;
   selected.y = blue.y;
   const aimedX = selected.x;
-  world.setInput('blue', { seq: 1, dx: 0, dy: 0, attack: false, cast: '1', targetUnitId: selected.id });
+  blue.nextAttackTick = 1000;
+  world.setInput('blue', { seq: 1, dx: 0, dy: 0, attack: false, cast: '1', aimX: selected.x, aimY: selected.y, targetUnitId: near.id });
   world.step();
   assert.ok(selected.hp < selected.maxHp);
   assert.equal(near.hp, near.maxHp);
@@ -308,13 +309,13 @@ test('dash stops at server-owned structures', () => {
   world.selectHero('red', 'fighter');
   const blue = world.players.get('blue');
   const tower = [...world.units.units.values()].find(unit => unit.kind === 'tower' && unit.team === 1 && unit.lane === 1);
-  blue.x = tower.x - 90;
+  blue.x = tower.x - 160;
   blue.y = tower.y;
   const startX = blue.x;
-  world.setInput('blue', { seq: 1, dx: 0, dy: 0, attack: false, cast: 'Q' });
+  world.setInput('blue', { seq: 1, dx: 0, dy: 0, attack: false, cast: 'Q', aimX: Math.round(blue.x + 200), aimY: Math.round(blue.y) });
   world.step();
   assert.ok(blue.x > startX && blue.x < tower.x - 48);
-  assert.equal(blue.y, tower.y);
+  assert.ok(Math.abs(blue.y - tower.y) < 1);
 });
 
 test('Q pressed while dead is ignored and works after respawn', () => {
@@ -325,13 +326,13 @@ test('Q pressed while dead is ignored and works after respawn', () => {
   const blue = world.players.get('blue');
   blue.hp = 0;
   blue.respawnTick = 2;
-  world.setInput('blue', { seq: 1, dx: 0, dy: 0, attack: false, cast: 'Q' });
+  world.setInput('blue', { seq: 1, dx: 0, dy: 0, attack: false, cast: 'Q', aimX: Math.round(blue.x + 200), aimY: Math.round(blue.y) });
   world.step();
   assert.equal(blue.hp, 0);
   world.step();
   assert.equal(blue.hp, blue.maxHp);
   assert.equal(blue.mana, 100);
-  world.setInput('blue', { seq: 2, dx: 0, dy: 0, attack: false, cast: 'Q' });
+  world.setInput('blue', { seq: 2, dx: 0, dy: 0, attack: false, cast: 'Q', aimX: Math.round(blue.x + 200), aimY: Math.round(blue.y) });
   world.step();
   assert.equal(blue.mana, 90);
   assert.ok(blue.x > 320);
@@ -352,7 +353,7 @@ test('database ability costs mana and obeys cooldown and range', () => {
   blue.x = 1000;
   blue.y = 1000;
   blue.nextAttackTick = 1000;
-  world.setInput('blue', { seq: 1, dx: 0, dy: 0, attack: false, cast: '1' });
+  world.setInput('blue', { seq: 1, dx: 0, dy: 0, attack: false, cast: '1', aimX: blue.x + 180, aimY: blue.y });
   world.step();
   assert.equal(red.hp, 100);
   assert.equal(blue.mana, 75);
@@ -360,11 +361,11 @@ test('database ability costs mana and obeys cooldown and range', () => {
   for (let i = 0; i < 30; i++) world.step();
   red.x = blue.x + 180;
   red.y = blue.y;
-  world.setInput('blue', { seq: 2, dx: 0, dy: 0, attack: false, cast: '1' });
+  world.setInput('blue', { seq: 2, dx: 0, dy: 0, attack: false, cast: '1', aimX: blue.x + 180, aimY: blue.y });
   world.step();
   assert.equal(red.hp, 70);
   assert.equal(blue.mana, 50);
-  world.setInput('blue', { seq: 3, dx: 0, dy: 0, attack: false, cast: '1' });
+  world.setInput('blue', { seq: 3, dx: 0, dy: 0, attack: false, cast: '1', aimX: blue.x + 180, aimY: blue.y });
   world.step();
   assert.equal(red.hp, 70);
   assert.equal(blue.mana, 50);
@@ -383,8 +384,8 @@ test('ability damage remains authoritative when both players cast', () => {
   const red = world.players.get('red');
   red.x = blue.x + 100;
   red.y = blue.y;
-  world.setInput('blue', { seq: 1, dx: 0, dy: 0, attack: false, cast: '1' });
-  world.setInput('red', { seq: 1, dx: 0, dy: 0, attack: false, cast: '1' });
+  world.setInput('blue', { seq: 1, dx: 0, dy: 0, attack: false, cast: '1', aimX: red.x, aimY: red.y });
+  world.setInput('red', { seq: 1, dx: 0, dy: 0, attack: false, cast: '1', aimX: blue.x, aimY: blue.y });
   world.step();
   assert.equal(world.status, 'playing');
   assert.equal(blue.hp, 100);
@@ -429,4 +430,73 @@ test('last stand stops respawns, elimination wins, and 30:00 is a draw when both
   draw.step();
   assert.equal(draw.status, 'finished');
   assert.equal(draw.winnerTeam, undefined);
+});
+
+test('spell aim is validated and range is enforced by the server', () => {
+  const hero = { ...heroes[0], maxMana: 100,
+    abilities: [{ key: '1', cooldown: 1000, manaCost: 10, damage: 80, range: 120 }] };
+  const world = new MatchWorld('aim-range', players, [hero]);
+  world.selectHero('blue', 'fighter'); world.selectHero('red', 'fighter');
+  world.units.units.clear();
+  const blue = world.players.get('blue');
+  const red = world.players.get('red');
+  blue.x = 1000; blue.y = 1000; blue.nextAttackTick = 1000;
+  red.x = 1400; red.y = 1000; red.nextAttackTick = 1000;
+  world.setInput('blue', { seq: 1, dx: 0, dy: 0, attack: false, cast: '1', aimX: 4000, aimY: 1000 });
+  world.step();
+  assert.equal(blue.mana, 100);
+  world.setInput('blue', { seq: 2, dx: 0, dy: 0, attack: false, cast: '1', aimX: 1400, aimY: 1000 });
+  world.step();
+  assert.equal(red.hp, 100);
+  assert.equal(blue.mana, 90);
+  assert.ok(world.snapshot().effects.some(effect => effect.kind === 'strike' && effect.x <= 1120));
+});
+
+test('support healing uses the dragged ally position', () => {
+  const team = [players[0], { playerId: 'green', username: 'Green', team: 1 }, players[1]];
+  const hero = { id: 'support', maxHp: 100, maxMana: 100, speed: 300, attack: 10,
+    abilities: [{ key: '2', cooldown: 1000, manaCost: 10, damage: 0, range: 200 }] };
+  const world = new MatchWorld('support-aim', team, [hero]);
+  for (const member of team) world.selectHero(member.playerId, 'support');
+  world.units.units.clear();
+  const blue = world.players.get('blue');
+  const green = world.players.get('green');
+  blue.x = 1000; blue.y = 1000; blue.hp = 50; blue.nextAttackTick = 1000;
+  green.x = 1160; green.y = 1000; green.hp = 20; green.nextAttackTick = 1000;
+  world.setInput('blue', { seq: 1, dx: 0, dy: 0, attack: false, cast: '2', aimX: 1160, aimY: 1000 });
+  world.step();
+  assert.equal(green.hp, 100);
+  assert.equal(blue.hp, 50);
+});
+
+test('marksman escape moves opposite the dragged direction', () => {
+  const hero = { id: 'marksman', maxHp: 100, maxMana: 100, speed: 300, attack: 10,
+    abilities: [{ key: '2', cooldown: 1000, manaCost: 10, damage: 0, range: 160 }] };
+  const world = new MatchWorld('escape-aim', players, [hero]);
+  world.selectHero('blue', 'marksman'); world.selectHero('red', 'marksman');
+  world.units.units.clear();
+  const blue = world.players.get('blue');
+  blue.x = 1000; blue.y = 1000;
+  world.setInput('blue', { seq: 1, dx: 0, dy: 0, attack: false, cast: '2', aimX: 1160, aimY: 1000 });
+  world.step();
+  assert.equal(blue.x, 840);
+  assert.equal(blue.mana, 90);
+});
+
+test('fighter bloodlust is a self buff that accelerates automatic attacks', () => {
+  const hero = { id: 'fighter', maxHp: 100, maxMana: 100, speed: 300, attack: 40,
+    abilities: [{ key: '1', cooldown: 1000, manaCost: 10, damage: 0, range: 0 }] };
+  const world = new MatchWorld('bloodlust', players, [hero]);
+  world.selectHero('blue', 'fighter'); world.selectHero('red', 'fighter');
+  world.units.units.clear();
+  const blue = world.players.get('blue');
+  const red = world.players.get('red');
+  blue.x = 1000; blue.y = 1000; red.x = 1100; red.y = 1000; red.nextAttackTick = 1000;
+  world.setInput('blue', { seq: 1, dx: 0, dy: 0, attack: false, cast: '1', aimX: 1000, aimY: 1000 });
+  world.step();
+  assert.equal(blue.mana, 90);
+  assert.equal(red.hp, 60);
+  assert.equal(blue.nextAttackTick, 15);
+  for (let i = 0; i < 14; i++) world.step();
+  assert.equal(red.hp, 20);
 });

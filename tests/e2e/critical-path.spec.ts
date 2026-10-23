@@ -82,15 +82,27 @@ test('registration launches a playable client scene', async ({ page }) => {
   await expect.poll(async () => Number(await canvas.getAttribute('data-server-x'))).toBeGreaterThan(initialX + 350);
   await page.keyboard.up('d');
   await expect.poll(async () => Number(await canvas.getAttribute('data-camera-x'))).toBeGreaterThan(0);
-  await page.keyboard.press('q');
+  const q = page.getByRole('button', { name: 'Cast Q' });
+  const qBox = await q.boundingBox();
+  expect(qBox).not.toBeNull();
+  await page.mouse.move(qBox!.x + qBox!.width / 2, qBox!.y + qBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(qBox!.x + qBox!.width / 2 - 85, qBox!.y + qBox!.height / 2 - 45, { steps: 6 });
+  await expect(canvas).toHaveAttribute('data-aim-key', 'Q');
+  await page.mouse.up();
   await expect.poll(async () => Number(await canvas.getAttribute('data-cast-tick'))).toBeGreaterThan(0);
   await expect.poll(async () => Number(await canvas.getAttribute('data-server-mana'))).toBeLessThan(100);
   await expect(page.getByLabel('Match timer')).toContainText('Lane 00:30');
-  await page.keyboard.down('Space');
-  await expect.poll(async () => Number(await canvas.getAttribute('data-attack-tick'))).toBeGreaterThan(0);
-  await page.keyboard.up('Space');
+  await expect(page.getByRole('button', { name: 'Attack' })).toHaveCount(0);
   const beforeSkill = Number(await canvas.getAttribute('data-server-mana'));
-  await page.keyboard.press('1');
+  const skill = page.getByRole('button', { name: 'Cast 1' });
+  const skillBox = await skill.boundingBox();
+  expect(skillBox).not.toBeNull();
+  await page.mouse.move(skillBox!.x + skillBox!.width / 2, skillBox!.y + skillBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(skillBox!.x + skillBox!.width / 2 - 70, skillBox!.y + skillBox!.height / 2 - 35, { steps: 5 });
+  await expect(canvas).toHaveAttribute('data-aim-key', '1');
+  await page.mouse.up();
   await expect.poll(async () => Number(await canvas.getAttribute('data-server-mana'))).toBeLessThan(beforeSkill);
   await expect.poll(async () => Number(await canvas.getAttribute('data-cast-tick'))).toBeGreaterThan(0);
   expect(errors).toEqual([]);
@@ -198,7 +210,7 @@ test('mobile player can scroll through setup and move with touch controls', asyn
     const joystick = page.getByTestId('move-joystick');
     await expect(joystick).toBeVisible();
     await expect(joystick).toBeInViewport();
-    await expect(page.getByRole('button', { name: 'Attack' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Attack' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Cast Q' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Select next target' })).toBeVisible();
 
@@ -218,11 +230,18 @@ test('mobile player can scroll through setup and move with touch controls', asyn
     await expect.poll(async () => Number(await canvas.getAttribute('data-server-x'))).toBeGreaterThan(startX + 20);
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 
-    await page.getByRole('button', { name: 'Cast Q' }).tap();
+    const qBox = await page.getByRole('button', { name: 'Cast Q' }).boundingBox();
+    expect(qBox).not.toBeNull();
+    const qX = qBox!.x + qBox!.width / 2;
+    const qY = qBox!.y + qBox!.height / 2;
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: qX, y: qY, id: 2 }] });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: qX + 42, y: qY - 60, id: 2 }] });
+    await expect(canvas).toHaveAttribute('data-aim-key', 'Q');
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     await expect.poll(async () => Number(await canvas.getAttribute('data-server-mana'))).toBeLessThan(100);
     await page.setViewportSize({ width: 844, height: 390 });
     await expect(joystick).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Attack' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Attack' })).toHaveCount(0);
     expect(errors).toEqual([]);
   } finally {
     await context.close();

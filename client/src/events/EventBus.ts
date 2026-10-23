@@ -19,6 +19,7 @@ export interface GameEvents {
   'ui:ability-cast': (abilityName: string, targetPosition?: { x: number; y: number }) => void;
   'ui:move-command': (x: number, y: number) => void;
   'ui:cycle-target': () => void;
+  'ui:ability-aim': (aim: { phase: 'start' | 'move' | 'cast' | 'cancel'; key: 'Q' | '1' | '2' | '3'; name: string; range: number; dx: number; dy: number }) => void;
   'loader:progress': (current: number, total: number, percent: number) => void;
   'loader:filecomplete': (key: string, type: string, file: { key: string }) => void;
   'loader:complete': () => void;

@@ -13,6 +13,9 @@ export function encodeInput(input) {
     attack: input.attack,
     cast: input.cast || '',
     targetUnit: input.targetUnitId || 0,
+    aimX: input.aimX ?? 0,
+    aimY: input.aimY ?? 0,
+    aimed: input.aimX !== undefined && input.aimY !== undefined,
   }).finish();
 }
 
@@ -25,6 +28,7 @@ export function decodeInput(data) {
     attack: message.attack,
     ...(message.cast ? { cast: message.cast } : {}),
     ...(message.targetUnit ? { targetUnitId: message.targetUnit } : {}),
+    ...(message.aimed ? { aimX: message.aimX, aimY: message.aimY } : {}),
   };
 }
 

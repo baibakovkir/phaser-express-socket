@@ -79,20 +79,6 @@ export function MobileControls() {
           >
             Target
           </button>
-          <button
-            type="button"
-            aria-label="Attack"
-            className="h-12 min-w-24 rounded-full border-2 border-red-300 bg-red-800/90 px-4 font-bold shadow-lg touch-none select-none active:bg-red-500"
-            onPointerDown={event => {
-              event.currentTarget.setPointerCapture(event.pointerId);
-              mobileInput.attack = true;
-            }}
-            onPointerUp={() => { mobileInput.attack = false; }}
-            onPointerCancel={() => { mobileInput.attack = false; }}
-            onLostPointerCapture={() => { mobileInput.attack = false; }}
-          >
-            Attack
-          </button>
         </div>
     </section>
   );

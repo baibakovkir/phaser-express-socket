@@ -8,7 +8,8 @@ import { EFFECT_SPRITES, HERO_SPRITES, spriteUrl } from '../assets/heroSprites';
 import { EventBus } from '../events/EventBus';
 
 const TICK_MS = 1000 / 30;
-type Keys = Record<'W' | 'A' | 'S' | 'D' | 'SPACE', Phaser.Input.Keyboard.Key>;
+type Keys = Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
+type AbilityAim = { phase: 'start' | 'move' | 'cast' | 'cancel'; key: NonNullable<GameInput['cast']>; name: string; range: number; dx: number; dy: number };
 
 export class NetworkGameScene extends Phaser.Scene {
   private matchId = '';
@@ -18,6 +19,8 @@ export class NetworkGameScene extends Phaser.Scene {
   private keys!: Keys;
   private mapGraphics!: Phaser.GameObjects.Graphics;
   private graphics!: Phaser.GameObjects.Graphics;
+  private aimGraphics!: Phaser.GameObjects.Graphics;
+  private aimPreview?: AbilityAim;
   private statusText!: Phaser.GameObjects.Text;
   private labels = new Map<string, Phaser.GameObjects.Text>();
   private playerSprites = new Map<string, Phaser.GameObjects.Image>();
@@ -36,13 +39,18 @@ export class NetworkGameScene extends Phaser.Scene {
   private readonly onAbort = () => this.statusText.setText('Match interrupted');
   private readonly onCycleTarget = () => this.cycleTarget();
   private readonly onPointerDown = (pointer: Phaser.Input.Pointer) => this.selectUnitAt(pointer.worldX, pointer.worldY);
-  private readonly onKeyDown = (event: KeyboardEvent) => {
-    const key = event.key.toUpperCase();
-    if (!event.repeat && ['Q', '1', '2', '3'].includes(key) &&
-      !(event.target instanceof HTMLInputElement) && !(event.target instanceof HTMLTextAreaElement)) {
-      queueMobileCast(key as NonNullable<GameInput['cast']>);
-      event.preventDefault();
+  private readonly onAbilityAim = (aim: AbilityAim) => {
+    if (aim.phase === 'cancel') {
+      this.aimPreview = undefined;
+      delete this.game.canvas.dataset.aimKey;
+      return;
     }
+    const point = this.aimPoint(aim);
+    if (aim.phase === 'cast') {
+      if (point) queueMobileCast({ cast: aim.key, aimX: Math.round(point.x), aimY: Math.round(point.y) });
+      this.aimPreview = undefined;
+      delete this.game.canvas.dataset.aimKey;
+    } else this.aimPreview = aim;
   };
 
   constructor() {
@@ -75,12 +83,13 @@ export class NetworkGameScene extends Phaser.Scene {
     }
     this.mapGraphics = this.add.graphics().setDepth(-1);
     this.graphics = this.add.graphics();
+    this.aimGraphics = this.add.graphics().setDepth(5);
     this.drawMap();
     this.statusText = this.add.text(24, 18, 'Waiting for players...', { color: '#ffffff', fontSize: '18px', backgroundColor: '#10202dcc', padding: { x: 10, y: 6 } }).setScrollFactor(0).setDepth(10);
     this.cameras.main.setBounds(0, 0, MAP_WIDTH, MAP_HEIGHT);
     this.cameras.main.setZoom(navigator.maxTouchPoints > 0 ? 1.5 : 1);
-    this.keys = this.input.keyboard!.addKeys('W,A,S,D,SPACE') as Keys;
-    window.addEventListener('keydown', this.onKeyDown);
+    this.keys = this.input.keyboard!.addKeys('W,A,S,D') as Keys;
+    EventBus.on('ui:ability-aim', this.onAbilityAim);
     this.input.on('pointerdown', this.onPointerDown);
     EventBus.on('ui:cycle-target', this.onCycleTarget);
     network.on('game:snapshot', this.onSnapshot);
@@ -88,7 +97,8 @@ export class NetworkGameScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       network.off('game:snapshot', this.onSnapshot);
       network.off('match:aborted', this.onAbort);
-      window.removeEventListener('keydown', this.onKeyDown);
+      EventBus.off('ui:ability-aim', this.onAbilityAim);
+      this.aimPreview = undefined;
       this.input.off('pointerdown', this.onPointerDown);
       EventBus.off('ui:cycle-target', this.onCycleTarget);
       resetMobileInput();
@@ -113,6 +123,9 @@ export class NetworkGameScene extends Phaser.Scene {
       delete this.game.canvas.dataset.cameraX;
       delete this.game.canvas.dataset.selectedTarget;
       delete this.game.canvas.dataset.renderedHeroes;
+      delete this.game.canvas.dataset.aimKey;
+      delete this.game.canvas.dataset.aimX;
+      delete this.game.canvas.dataset.aimY;
     });
     this.time.addEvent({ delay: TICK_MS, loop: true, callback: () => this.sendInput() });
   }
@@ -167,7 +180,7 @@ export class NetworkGameScene extends Phaser.Scene {
       ? snapshot.winnerTeam ? `Team ${snapshot.winnerTeam} wins · refresh to play again` : 'Draw · 30:00 · refresh to play again'
       : snapshot.status === 'selecting'
         ? 'Waiting for hero selections...'
-        : `${clock}  ·  Lane ${lane}s  ·  Jungle ${jungle}s  ·  Oni ${boss}\nWASD move · Space attack · Q / 1 / 2 / 3 abilities`);
+        : `${clock}  ·  Lane ${lane}s  ·  Jungle ${jungle}s  ·  Oni ${boss}\nWASD move · attacks automatic · drag a skill icon to aim`);
   }
 
   private sendInput(): void {
@@ -177,8 +190,8 @@ export class NetworkGameScene extends Phaser.Scene {
       seq: ++this.sequence,
       dx: Phaser.Math.Clamp(Number(this.keys.D.isDown) - Number(this.keys.A.isDown) + mobileInput.dx, -1, 1),
       dy: Phaser.Math.Clamp(Number(this.keys.S.isDown) - Number(this.keys.W.isDown) + mobileInput.dy, -1, 1),
-      attack: this.keys.SPACE.isDown || mobileInput.attack,
-      ...(cast ? { cast } : {}),
+      attack: false,
+      ...(cast || {}),
       ...(this.selectedUnitId ? { targetUnitId: this.selectedUnitId } : {}),
     };
     this.pending.push(input);
@@ -188,6 +201,7 @@ export class NetworkGameScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     this.graphics.clear();
+    this.aimGraphics.clear();
     const latest = this.snapshots.at(-1);
     if (!latest) return;
     const renderTick = Math.max(0, latest.tick - 3 + Math.min((this.time.now - this.receivedAt) / TICK_MS, 3));
@@ -244,6 +258,7 @@ export class NetworkGameScene extends Phaser.Scene {
     }
     this.game.canvas.dataset.renderedHeroes = JSON.stringify([...this.playerSprites].map(([id, sprite]) => ({ id, texture: sprite.texture.key })));
     this.drawEffects(latest.effects, renderTick);
+    this.drawAimPreview();
     for (const [id, label] of this.labels) {
       if (!seen.has(id)) {
         label.destroy();
@@ -253,6 +268,41 @@ export class NetworkGameScene extends Phaser.Scene {
         this.lastRenderPositions.delete(id);
       }
     }
+  }
+
+  private aimPoint(aim: AbilityAim): { x: number; y: number; originX: number; originY: number } | undefined {
+    const own = this.snapshots.at(-1)?.players.find(player => player.id === this.playerId);
+    if (!own || own.hp <= 0) return;
+    const originX = this.localPosition?.x ?? own.x;
+    const originY = this.localPosition?.y ?? own.y;
+    if (aim.range <= 0) return { x: originX, y: originY, originX, originY };
+    const distance = Math.hypot(aim.dx, aim.dy);
+    const dx = distance < 8 ? (own.team === 1 ? aim.range : -aim.range) : aim.dx * aim.range / 100;
+    const dy = distance < 8 ? 0 : aim.dy * aim.range / 100;
+    const scale = Math.min(1, aim.range / (Math.hypot(dx, dy) || 1));
+    return {
+      x: Phaser.Math.Clamp(originX + dx * scale, 0, MAP_WIDTH),
+      y: Phaser.Math.Clamp(originY + dy * scale, 0, MAP_HEIGHT), originX, originY,
+    };
+  }
+
+  private drawAimPreview(): void {
+    const aim = this.aimPreview;
+    if (!aim) return;
+    const point = this.aimPoint(aim);
+    if (!point) return;
+    const g = this.aimGraphics;
+    const area = (aim.key === '1' && ['Ice Nova', 'Multi Shot'].includes(aim.name)) ||
+      (aim.key === '3' && ['Meteor', 'Heroic Leap', 'Rain of Arrows'].includes(aim.name));
+    const radius = aim.range <= 0 ? 58 : area ? aim.key === '3' ? 105 : 85 : 52;
+    g.lineStyle(2, 0x9be9ff, 0.9).strokeCircle(point.originX, point.originY, aim.range);
+    g.lineStyle(5, 0xd9f8ff, 0.95).lineBetween(point.originX, point.originY, point.x, point.y);
+    g.fillStyle(0x79d8ff, 0.22).fillCircle(point.x, point.y, radius);
+    g.lineStyle(4, 0xffffff, 0.95).strokeCircle(point.x, point.y, radius);
+    g.fillStyle(0xffe48a).fillCircle(point.x, point.y, 6);
+    this.game.canvas.dataset.aimKey = aim.key;
+    this.game.canvas.dataset.aimX = String(Math.round(point.x));
+    this.game.canvas.dataset.aimY = String(Math.round(point.y));
   }
 
   private targetableUnits(): WorldUnit[] {

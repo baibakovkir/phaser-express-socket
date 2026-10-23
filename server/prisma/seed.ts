@@ -114,12 +114,12 @@ async function main() {
     // Support abilities
     { heroId: "support", key: "Q", name: "Dash", description: "Dash forward", cooldown: 3000, manaCost: 15, damage: 0, range: 200 },
     { heroId: "support", key: "1", name: "Smite", description: "Holy damage", cooldown: 4000, manaCost: 20, damage: 90, range: 180 },
-    { heroId: "support", key: "2", name: "Blessing", description: "Buff ally", cooldown: 10000, manaCost: 30, damage: 0, range: 0 },
-    { heroId: "support", key: "3", name: "Resurrection", description: "Revive ally", cooldown: 30000, manaCost: 60, damage: 0, range: 0 },
+    { heroId: "support", key: "2", name: "Blessing", description: "Heal an aimed ally", cooldown: 10000, manaCost: 30, damage: 0, range: 200 },
+    { heroId: "support", key: "3", name: "Resurrection", description: "Revive an aimed ally", cooldown: 30000, manaCost: 60, damage: 0, range: 200 },
     // Marksman abilities
     { heroId: "marksman", key: "Q", name: "Dash", description: "Dash forward", cooldown: 2500, manaCost: 15, damage: 0, range: 220 },
     { heroId: "marksman", key: "1", name: "Multi Shot", description: "Hit multiple", cooldown: 5000, manaCost: 25, damage: 60, range: 250 },
-    { heroId: "marksman", key: "2", name: "Escape", description: "Dash backward", cooldown: 8000, manaCost: 15, damage: 0, range: 0 },
+    { heroId: "marksman", key: "2", name: "Escape", description: "Dash away from the aimed direction", cooldown: 8000, manaCost: 15, damage: 0, range: 160 },
     { heroId: "marksman", key: "3", name: "Rain of Arrows", description: "Arrow barrage", cooldown: 15000, manaCost: 45, damage: 180, range: 280 },
     // Fighter abilities
     { heroId: "fighter", key: "Q", name: "Dash", description: "Dash forward", cooldown: 2800, manaCost: 12, damage: 0, range: 220 },

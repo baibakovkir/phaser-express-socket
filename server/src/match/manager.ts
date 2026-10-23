@@ -3,6 +3,7 @@ import { Worker } from 'node:worker_threads';
 import type { Server } from 'socket.io';
 import type { GameInput, ItemDefinition, MatchFound, MatchParticipant, WorldSnapshot } from '@moba/shared';
 import { encodeSnapshot } from '@moba/shared/codec';
+import { MAP_HEIGHT, MAP_WIDTH } from '@moba/shared/map';
 import { prisma } from '../lib/prisma.js';
 import { redis } from '../lib/redis.js';
 import type { HeroStats } from './world.js';
@@ -143,7 +144,7 @@ class MatchManager {
       participants,
       heroes: catalog.map(hero => ({ id: hero.id, name: hero.name, role: hero.role.toLowerCase(), color: colors[hero.role] || 0xffffff,
         abilities: hero.abilities.filter(ability => ['Q', '1', '2', '3'].includes(ability.key)).map(ability => ({
-          key: ability.key as 'Q' | '1' | '2' | '3', name: ability.name, manaCost: ability.manaCost, cooldown: ability.cooldown,
+          key: ability.key as 'Q' | '1' | '2' | '3', name: ability.name, manaCost: ability.manaCost, cooldown: ability.cooldown, range: ability.range,
         })) })),
       items,
     };
@@ -166,7 +167,9 @@ class MatchManager {
     if (!input || !Number.isSafeInteger(input.seq) || input.seq < 1 ||
         !Number.isFinite(input.dx) || !Number.isFinite(input.dy) ||
         Math.abs(input.dx) > 1 || Math.abs(input.dy) > 1 || typeof input.attack !== 'boolean' ||
-        (input.cast !== undefined && !['Q', '1', '2', '3'].includes(input.cast)) ||
+        (input.cast !== undefined && (!['Q', '1', '2', '3'].includes(input.cast) ||
+          !Number.isSafeInteger(input.aimX) || !Number.isSafeInteger(input.aimY) ||
+          input.aimX! < 0 || input.aimX! > MAP_WIDTH || input.aimY! < 0 || input.aimY! > MAP_HEIGHT)) ||
         (input.targetUnitId !== undefined && (!Number.isSafeInteger(input.targetUnitId) || input.targetUnitId < 1))) return;
     const now = Date.now();
     const budget = match.inputBudget.get(playerId);

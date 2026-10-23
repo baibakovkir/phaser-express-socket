@@ -4,6 +4,8 @@ export interface GameInput {
   dy: number;
   attack: boolean;
   cast?: 'Q' | '1' | '2' | '3';
+  aimX?: number;
+  aimY?: number;
   targetUnitId?: number;
 }
 
@@ -17,7 +19,7 @@ export interface MatchFound {
   matchId: string;
   participants: MatchParticipant[];
   heroes: { id: string; name: string; role: string; color: number;
-    abilities: { key: 'Q' | '1' | '2' | '3'; name: string; manaCost: number; cooldown: number }[] }[];
+    abilities: { key: 'Q' | '1' | '2' | '3'; name: string; manaCost: number; cooldown: number; range: number }[] }[];
   items: ItemDefinition[];
 }
 

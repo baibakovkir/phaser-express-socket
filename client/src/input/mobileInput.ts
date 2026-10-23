@@ -1,24 +1,20 @@
 import type { GameInput } from '@moba/shared';
 
-export const mobileInput: Pick<GameInput, 'dx' | 'dy' | 'attack'> = {
-  dx: 0,
-  dy: 0,
-  attack: false,
-};
+export const mobileInput: Pick<GameInput, 'dx' | 'dy'> = { dx: 0, dy: 0 };
 
-const pendingCasts: NonNullable<GameInput['cast']>[] = [];
+type PendingCast = Required<Pick<GameInput, 'cast' | 'aimX' | 'aimY'>>;
+const pendingCasts: PendingCast[] = [];
 
-export function queueMobileCast(cast: NonNullable<GameInput['cast']>): void {
+export function queueMobileCast(cast: PendingCast): void {
   if (pendingCasts.length < 4) pendingCasts.push(cast);
 }
 
-export function takeMobileCast(): GameInput['cast'] {
+export function takeMobileCast(): PendingCast | undefined {
   return pendingCasts.shift();
 }
 
 export function resetMobileInput(): void {
   mobileInput.dx = 0;
   mobileInput.dy = 0;
-  mobileInput.attack = false;
   pendingCasts.length = 0;
 }

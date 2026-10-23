@@ -32,11 +32,12 @@ interface PlayerState extends WorldPlayer {
   input: GameInput;
   nextAttackTick: number;
   respawnTick: number;
-  queuedCast?: GameInput['cast'];
+  queuedCast?: Pick<GameInput, 'cast' | 'aimX' | 'aimY'>;
   cooldowns: Map<string, number>;
   shield: number;
   itemShield: number;
   attackBoostUntil: number;
+  attackSpeedUntil: number;
   facing: { x: number; y: number };
   damageContributors: Map<string, number>;
   shieldUntil: number;
@@ -106,6 +107,7 @@ export class MatchWorld {
         shield: 0,
         itemShield: 0,
         attackBoostUntil: 0,
+        attackSpeedUntil: 0,
         facing: { x: participant.team === 1 ? 1 : -1, y: 0 },
         damageContributors: new Map(),
         shieldUntil: 0,
@@ -218,9 +220,11 @@ export class MatchWorld {
     if (!Number.isSafeInteger(input.seq) || input.seq < 1 || !Number.isFinite(input.dx) || !Number.isFinite(input.dy)) return;
     if (Math.abs(input.dx) > 1 || Math.abs(input.dy) > 1 || typeof input.attack !== 'boolean') return;
     if (input.cast !== undefined && !['Q', '1', '2', '3'].includes(input.cast)) return;
+    if (input.cast && (!Number.isSafeInteger(input.aimX) || !Number.isSafeInteger(input.aimY) ||
+      input.aimX! < 0 || input.aimX! > MAP_WIDTH || input.aimY! < 0 || input.aimY! > MAP_HEIGHT)) return;
     if (input.targetUnitId !== undefined && (!Number.isSafeInteger(input.targetUnitId) || input.targetUnitId < 1)) return;
-    if (input.cast && player.hp > 0 && !player.queuedCast) player.queuedCast = input.cast;
-    player.input = player.hp > 0 ? input : { seq: input.seq, dx: 0, dy: 0, attack: false };
+    if (input.cast && player.hp > 0 && !player.queuedCast) player.queuedCast = { cast: input.cast, aimX: input.aimX, aimY: input.aimY };
+    player.input = player.hp > 0 ? { ...input, attack: false } : { seq: input.seq, dx: 0, dy: 0, attack: false };
     if (player.hp <= 0) player.lastProcessedSeq = input.seq;
   }
 
@@ -287,7 +291,7 @@ export class MatchWorld {
       const selectedInRange = selectedUnit && this.units.canDamage(player.team, selectedUnit) &&
         Math.hypot(selectedUnit.x - player.x, selectedUnit.y - player.y) <= ATTACK_RANGE;
       const unitTarget = selectedInRange ? selectedUnit : this.units.nearestAttackable(player.team, player.x, player.y, ATTACK_RANGE);
-      if (!heroTarget && !unitTarget && !player.input.attack) continue;
+      if (!heroTarget && !unitTarget) continue;
       const amount = player.attack * (this.tick < player.attackBoostUntil ? 1.5 : 1) * this.units.damageMultiplier(player.team, this.tick);
       const hitUnit = unitTarget && (selectedInRange || !heroTarget ||
         Math.hypot(unitTarget.x - player.x, unitTarget.y - player.y) < Math.hypot(heroTarget.x - player.x, heroTarget.y - player.y));
@@ -301,7 +305,7 @@ export class MatchWorld {
         player.hp = Math.min(player.maxHp, player.hp + Math.round(actualDamage * player.lifesteal));
         this.effect(player, 'lifesteal', player.x, player.y);
       }
-      player.nextAttackTick = this.tick + ATTACK_INTERVAL;
+      player.nextAttackTick = this.tick + (this.tick < player.attackSpeedUntil ? 14 : ATTACK_INTERVAL);
       this.effect(player, 'attack', hitUnit ? unitTarget.x : heroTarget?.x ?? player.x + player.facing.x * 75,
         hitUnit ? unitTarget.y : heroTarget?.y ?? player.y + player.facing.y * 75, hitUnit ? undefined : heroTarget?.id);
       if (this.units.winnerTeam) break;
@@ -323,31 +327,30 @@ export class MatchWorld {
     this.effects = this.effects.filter(effect => this.tick - effect.tick < (effect.kind === 'gold' ? 30 : 18));
   }
 
-  private cast(player: PlayerState, key: NonNullable<GameInput['cast']>, players: PlayerState[]): void {
+  private cast(player: PlayerState, intent: Pick<GameInput, 'cast' | 'aimX' | 'aimY'>, players: PlayerState[]): void {
+    const key = intent.cast;
+    if (!key || intent.aimX === undefined || intent.aimY === undefined) return;
     const hero = this.heroes.find(item => item.id === player.heroId);
     const ability = hero?.abilities?.find(item => item.key === key);
     if (!ability || this.tick < (player.cooldowns.get(key) ?? 0) || player.mana < ability.manaCost) return;
-    const enemy = players
-      .filter(other => other.team !== player.team && other.hp > 0 && Math.hypot(other.x - player.x, other.y - player.y) <= ability.range)
-      .sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0];
-    const selectedUnit = player.input.targetUnitId && this.units.units.get(player.input.targetUnitId);
-    const selectedInRange = selectedUnit && this.units.canDamage(player.team, selectedUnit) &&
-      Math.hypot(selectedUnit.x - player.x, selectedUnit.y - player.y) <= ability.range;
-    const unitEnemy = selectedInRange ? selectedUnit : this.units.nearestAttackable(player.team, player.x, player.y, ability.range);
-    const aimUnit = unitEnemy && (selectedInRange || !enemy ||
-      Math.hypot(unitEnemy.x - player.x, unitEnemy.y - player.y) < Math.hypot(enemy.x - player.x, enemy.y - player.y));
-    const aimTarget = aimUnit ? unitEnemy : enemy;
-    const ally = players
-      .filter(other => other.team === player.team && other.hp > 0)
-      .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
+    const maxRange = Math.max(0, ability.range);
+    const rawX = intent.aimX - player.x;
+    const rawY = intent.aimY - player.y;
+    const length = Math.hypot(rawX, rawY);
+    const scale = length > maxRange && length > 0 ? maxRange / length : 1;
+    const aim = { x: player.x + rawX * scale, y: player.y + rawY * scale };
+    const inRange = (other: { x: number; y: number }) => Math.hypot(other.x - player.x, other.y - player.y) <= maxRange;
+    const aimedEnemy = [
+      ...players.filter(other => other.team !== player.team && other.hp > 0 && inRange(other)),
+      ...[...this.units.units.values()].filter(unit => this.units.canDamage(player.team, unit) && inRange(unit)),
+    ].filter(other => Math.hypot(other.x - aim.x, other.y - aim.y) <= 52)
+      .sort((a, b) => Math.hypot(a.x - aim.x, a.y - aim.y) - Math.hypot(b.x - aim.x, b.y - aim.y) || String(a.id).localeCompare(String(b.id)))[0];
     let used = true;
     if (key === 'Q' || (key === '2' && player.heroId === 'marksman')) {
+      if (length < 1) return;
+      player.facing = { x: rawX / length, y: rawY / length };
       const direction = key === 'Q' ? 1 : -1;
       const distance = Math.min(ability.range || 160, 250);
-      if (aimTarget && !player.input.dx && !player.input.dy) {
-        const length = Math.hypot(aimTarget.x - player.x, aimTarget.y - player.y);
-        if (length > 0) player.facing = { x: (aimTarget.x - player.x) / length, y: (aimTarget.y - player.y) / length };
-      }
       for (let traveled = 0; traveled < distance; traveled += RADIUS) {
         const step = Math.min(RADIUS, distance - traveled);
         const x = Math.max(RADIUS, Math.min(MAP_WIDTH - RADIUS, player.x + player.facing.x * step * direction));
@@ -358,11 +361,19 @@ export class MatchWorld {
         player.y = y;
       }
       this.effect(player, 'dash', player.x, player.y);
+    } else if (key === '1' && player.heroId === 'fighter' && ability.damage === 0) {
+      player.attackSpeedUntil = this.tick + 120;
+      this.effect(player, 'buff', player.x, player.y);
     } else if (key === '2') {
       if (player.heroId === 'support') {
-        const target = ally ?? player;
-        target.hp = Math.min(target.maxHp, target.hp + 100);
-        this.effect(player, 'heal', target.x, target.y, target.id);
+        const target = players.filter(other => other.team === player.team && other.hp > 0 && inRange(other) &&
+          Math.hypot(other.x - aim.x, other.y - aim.y) <= 52).sort((a, b) =>
+          Math.hypot(a.x - aim.x, a.y - aim.y) - Math.hypot(b.x - aim.x, b.y - aim.y))[0];
+        if (!target) used = false;
+        else {
+          target.hp = Math.min(target.maxHp, target.hp + 100);
+          this.effect(player, 'heal', target.x, target.y, target.id);
+        }
       } else if (player.heroId === 'mage' || player.heroId === 'assassin') {
         player.shield += player.heroId === 'mage' ? 140 : 80;
         this.effect(player, 'shield', player.x, player.y);
@@ -371,7 +382,8 @@ export class MatchWorld {
         this.effect(player, 'buff', player.x, player.y);
       }
     } else if (key === '3' && player.heroId === 'support') {
-      const target = this.tick < LAST_STAND_TICK ? players.find(other => other.team === player.team && other.hp === 0) : undefined;
+      const target = this.tick < LAST_STAND_TICK ? players.find(other => other.team === player.team && other.hp === 0 &&
+        inRange(other) && Math.hypot(other.x - aim.x, other.y - aim.y) <= 70) : undefined;
       if (!target) used = false;
       else {
         target.hp = Math.ceil(target.maxHp * 0.4);
@@ -379,35 +391,25 @@ export class MatchWorld {
         target.y = player.y;
         this.effect(player, 'revive', target.x, target.y, target.id);
       }
-    } else if (key === '1' && ['mage', 'marksman'].includes(player.heroId) ||
-               key === '3' && ['warrior', 'mage', 'marksman'].includes(player.heroId)) {
-      const targets = players.filter(other => other.team !== player.team && other.hp > 0 &&
-        Math.hypot(other.x - player.x, other.y - player.y) <= ability.range);
-      const unitTargets = [...this.units.units.values()].filter(unit => this.units.canDamage(player.team, unit) &&
-        Math.hypot(unit.x - player.x, unit.y - player.y) <= ability.range);
-      if (!targets.length && !unitTargets.length) {
-        this.effect(player, key === '3' ? 'meteor' : 'nova',
-          player.x + player.facing.x * Math.min(ability.range, 150),
-          player.y + player.facing.y * Math.min(ability.range, 150));
-      } else {
-        for (const target of targets) this.applyDamage(player, target, ability.damage);
-        for (const target of unitTargets) this.units.damageUnit(player.team, target.id, ability.damage, this.tick, player.id);
-        const first = selectedInRange ? selectedUnit : aimTarget ?? targets[0] ?? unitTargets[0];
-        this.effect(player, key === '3' ? 'meteor' : 'nova', first.x, first.y);
+    } else if ((key === '1' && ['mage', 'marksman'].includes(player.heroId)) ||
+               (key === '3' && ['warrior', 'mage', 'marksman'].includes(player.heroId))) {
+      const radius = key === '3' ? 105 : 85;
+      for (const target of players.filter(other => other.team !== player.team && other.hp > 0 && inRange(other) &&
+        Math.hypot(other.x - aim.x, other.y - aim.y) <= radius)) this.applyDamage(player, target, ability.damage);
+      for (const target of [...this.units.units.values()].filter(unit => this.units.canDamage(player.team, unit) && inRange(unit) &&
+        Math.hypot(unit.x - aim.x, unit.y - aim.y) <= radius)) {
+        this.units.damageUnit(player.team, target.id, ability.damage, this.tick, player.id);
       }
-    } else if (aimTarget) {
-      const target = aimTarget;
-      const damage = player.heroId === 'fighter' && key === '3' && target.hp < target.maxHp * 0.35
+      this.effect(player, key === '3' ? 'meteor' : 'nova', aim.x, aim.y);
+    } else if (aimedEnemy) {
+      const damage = player.heroId === 'fighter' && key === '3' && aimedEnemy.hp < aimedEnemy.maxHp * 0.35
         ? ability.damage * 1.5 : ability.damage;
-      if ('kind' in target) this.units.damageUnit(player.team, target.id, damage, this.tick, player.id);
-      else this.applyDamage(player, target, damage);
-      this.effect(player, key === '3' ? 'execute' : 'strike', target.x, target.y,
-        'kind' in target ? undefined : target.id);
+      if ('kind' in aimedEnemy) this.units.damageUnit(player.team, aimedEnemy.id, damage, this.tick, player.id);
+      else this.applyDamage(player, aimedEnemy, damage);
+      this.effect(player, key === '3' ? 'execute' : 'strike', aimedEnemy.x, aimedEnemy.y,
+        'kind' in aimedEnemy ? undefined : aimedEnemy.id);
     } else {
-      // A missed cast still has a visible effect and consumes its cooldown.
-      this.effect(player, key === '3' ? 'execute' : 'strike',
-        player.x + player.facing.x * Math.min(ability.range, 120),
-        player.y + player.facing.y * Math.min(ability.range, 120));
+      this.effect(player, key === '3' ? 'execute' : 'strike', aim.x, aim.y);
     }
     if (!used) return;
     player.mana -= ability.manaCost;
