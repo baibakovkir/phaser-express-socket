@@ -38,7 +38,7 @@ test('auth forms show field validation and API errors', async ({ page }) => {
   await expect(toast).toHaveCount(0);
 });
 
-test('registration launches a playable client scene', async ({ page }) => {
+test('registration launches a playable client scene', async ({ page }, testInfo) => {
   test.setTimeout(90_000);
   const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const errors: string[] = [];
@@ -72,6 +72,9 @@ test('registration launches a playable client scene', async ({ page }) => {
   await page.getByRole('button', { name: /LOCK HERO/ }).click();
   const canvas = page.locator('canvas[data-game-ready="true"]');
   await expect(canvas).toBeVisible();
+  if (process.env.E2E_CAPTURE_MAP === '1') {
+    await canvas.screenshot({ path: testInfo.outputPath('desktop-arena.png') });
+  }
   await page.keyboard.press('b');
   const shop = page.getByRole('dialog', { name: 'Fountain shop' });
   await expect(shop).toBeVisible();
@@ -160,7 +163,7 @@ test('two players receive the same server match', async ({ browser }) => {
   }
 });
 
-test('mobile player can scroll through setup and move with touch controls', async ({ browser }) => {
+test('mobile player can scroll through setup and move with touch controls', async ({ browser }, testInfo) => {
   test.setTimeout(90_000);
   const context = await browser.newContext({
     viewport: { width: 390, height: 844 },
@@ -197,6 +200,9 @@ test('mobile player can scroll through setup and move with touch controls', asyn
 
     const canvas = page.locator('canvas[data-game-ready="true"]');
     await expect(canvas).toBeVisible();
+    if (process.env.E2E_CAPTURE_MAP === '1') {
+      await canvas.screenshot({ path: testInfo.outputPath('mobile-arena.png') });
+    }
     await page.getByRole('button', { name: 'Open shop' }).tap();
     const shop = page.getByRole('dialog', { name: 'Fountain shop' });
     await expect(shop).toBeVisible();

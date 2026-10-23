@@ -6,7 +6,7 @@ import { network } from '../network/socket';
 import { mobileInput, queueMobileCast, resetMobileInput, takeMobileCast } from '../input/mobileInput';
 import { HERO_SPRITES } from '../assets/heroSprites';
 import { registerArenaSprites } from '../assets/arenaSprites';
-import { registerArenaTerrain } from '../assets/arenaTerrain';
+import { registerArenaTerrain, TERRAIN_NAMES, terrainUrl } from '../assets/arenaTerrain';
 import { registerSengokuHeroes, type HeroDirection, type HeroMotion } from '../assets/sengokuSprites';
 import { EventBus } from '../events/EventBus';
 
@@ -62,6 +62,10 @@ export class NetworkGameScene extends Phaser.Scene {
     super({ key: 'NetworkGameScene' });
   }
 
+  preload(): void {
+    for (const name of TERRAIN_NAMES) this.load.image(`terrain-${name}`, terrainUrl(name));
+  }
+
   init(data: MatchFound): void {
     this.matchId = data.matchId;
     this.participants = data.participants || [];
@@ -79,7 +83,7 @@ export class NetworkGameScene extends Phaser.Scene {
     registerSengokuHeroes(this);
     registerArenaSprites(this);
     registerArenaTerrain(this);
-    this.add.tileSprite(0, 0, MAP_WIDTH, MAP_HEIGHT, 'arena-ground').setOrigin(0).setDepth(-2);
+    this.add.image(0, 0, 'arena-map').setOrigin(0).setDisplaySize(MAP_WIDTH, MAP_HEIGHT).setDepth(-2);
     this.mapGraphics = this.add.graphics().setDepth(-1);
     this.graphics = this.add.graphics();
     this.aimGraphics = this.add.graphics().setDepth(5);
@@ -331,26 +335,17 @@ export class NetworkGameScene extends Phaser.Scene {
 
   private drawMap(): void {
     const ground = this.mapGraphics;
-    ground.fillStyle(0x183b36, 0.65).fillRect(0, 0, MAP_WIDTH, 990);
-    ground.fillStyle(0x2e4739, 0.35).fillEllipse(1600, 360, 2800, 1150);
-    ground.fillStyle(0x486044, 0.35).fillEllipse(1600, 1770, 2900, 400);
+    ground.fillStyle(0x2e4739, 0.2).fillEllipse(1600, 360, 2800, 1150);
+    ground.fillStyle(0x486044, 0.2).fillEllipse(1600, 1770, 2900, 400);
     ground.lineStyle(12, 0x253a34, 0.8).strokeRect(4, 4, MAP_WIDTH - 8, MAP_HEIGHT - 8);
     ground.lineStyle(3, 0xc1aa77, 0.6).strokeRect(14, 14, MAP_WIDTH - 28, MAP_HEIGHT - 28);
 
     // The upper wilderness is one contiguous contested area, with a stream between camps.
     const stream = [{ x: 180, y: 770 }, { x: 740, y: 680 }, { x: 1390, y: 770 },
       { x: 1950, y: 620 }, { x: 2600, y: 750 }, { x: 3100, y: 690 }];
-    this.strokeRoute(stream, 90, 0x183c42);
-    this.strokeRoute(stream, 68, 0x387d84);
-    this.strokeRoute(stream, 42, 0x57969a);
-    this.strokeRoute(stream, 7, 0x91b9ad);
+    this.strokeRoute(stream, 4, 0x91b9ad);
 
     for (const lane of LANES) {
-      this.strokeRoute(lane.path, 200, 0x1a302c);
-      this.strokeRoute(lane.path, 184, 0x5c6659);
-      this.strokeRoute(lane.path, 166, 0x827e69);
-      this.strokeRoute(lane.path, 146, 0xaaa48c);
-      this.strokeRoute(lane.path, 112, 0xb8b19b);
       this.strokeRoute(lane.path, 4, 0xd6c7a4);
       for (let index = 4; index < lane.path.length - 4; index += 4) {
         const point = lane.path[index];
@@ -379,7 +374,6 @@ export class NetworkGameScene extends Phaser.Scene {
     for (const x of [430, 990, 1430, 1870, 2310, 2760]) this.drawLantern(x, 905);
     this.drawBridge(1590, 730);
     for (const camp of CAMPS) {
-      ground.fillStyle(0x504e3d, 0.85).fillCircle(camp.x, camp.y, 78);
       ground.lineStyle(6, 0xe5c884, 0.75).strokeCircle(camp.x, camp.y, 72);
       ground.fillStyle(0x735049).fillCircle(camp.x, camp.y, 13);
       ground.fillStyle(0xf2c878, 0.75).fillCircle(camp.x, camp.y, 6);
@@ -390,7 +384,6 @@ export class NetworkGameScene extends Phaser.Scene {
       ground.lineStyle(5, 0xe6c779).strokeCircle(shrine.x, shrine.y, 79);
       this.drawTorii(shrine.x, shrine.y, 0.75);
     }
-    ground.fillStyle(0x5b483e).fillCircle(BOSS.x, BOSS.y, 119);
     ground.lineStyle(7, 0xc26a5f).strokeCircle(BOSS.x, BOSS.y, 112);
     this.drawTorii(BOSS.x, BOSS.y - 130, 1.15);
     for (const team of [1, 2] as const) {
